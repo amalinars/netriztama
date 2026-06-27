@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router'
 import { LayoutDashboard, ShoppingCart, Tv, Sun, Moon } from 'lucide-react'
+import { Toaster } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { useTheme } from '@/lib/theme'
 
@@ -14,6 +15,7 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-background transition-colors">
+      <Toaster theme={theme} position="top-center" richColors closeButton />
       <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-1 px-4">
           <NavLink to="/" className="mr-4 flex items-center gap-2.5 font-bold text-lg tracking-tight sm:mr-6">

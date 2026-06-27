@@ -11,6 +11,8 @@ export type Profile = {
   account_id: string
   name: string
   pin: string | null
+  old_pin: string | null
+  pin_change_pending: boolean
   is_rentable: boolean
   created_at: string
 }
@@ -27,6 +29,7 @@ export type Order = {
   price: number
   start_date: string
   end_date: string
+  logout_time: string
   status: 'booked' | 'done'
   notes: string | null
   created_at: string

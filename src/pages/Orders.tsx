@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { supabase, autoCompleteOrders } from '@/lib/supabase'
-import { PACKAGES, formatRupiah, calculateEndDate } from '@/lib/constants'
-import type { Account, Profile, OrderWithProfile, PackageType } from '@/types/database'
+import { supabase, autoCompleteOrders, completeOrder } from '@/lib/supabase'
+import { PACKAGES, formatRupiah } from '@/lib/constants'
+import type { Account, Profile, OrderWithProfile, Order } from '@/types/database'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -9,28 +10,36 @@ import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Plus, Search, CheckCircle2, AlertTriangle, List, LayoutGrid, Calendar, User, Tag } from 'lucide-react'
+import AddOrderDialog from '@/components/AddOrderDialog'
+import ConfirmDialog from '@/components/ConfirmDialog'
+import LogoutTimeField from '@/components/LogoutTimeField'
+import ProfilePinStatus from '@/components/ProfilePinStatus'
+import EditProfileDialog from '@/components/EditProfileDialog'
+import { Search, CheckCircle2, AlertTriangle, List, LayoutGrid, Calendar, Tag, RefreshCw, Pencil, Trash2 } from 'lucide-react'
 
 type ViewMode = 'list' | 'card'
+type AccountWithProfiles = Account & { profiles: Profile[] }
+type OrderFilter = 'available' | 'all' | 'booked' | 'done'
 
 export default function Orders() {
   const [orders, setOrders] = useState<OrderWithProfile[]>([])
-  const [accounts, setAccounts] = useState<Account[]>([])
+  const [accounts, setAccounts] = useState<AccountWithProfiles[]>([])
   const [search, setSearch] = useState('')
-  const [filterStatus, setFilterStatus] = useState<'all' | 'booked' | 'done'>('booked')
+  const [filterStatus, setFilterStatus] = useState<OrderFilter>('booked')
   const [selectedAccount, setSelectedAccount] = useState<string>('all')
   const [viewMode, setViewMode] = useState<ViewMode>(() => (localStorage.getItem('orders-view') as ViewMode) || 'list')
   const [loading, setLoading] = useState(true)
+  const [extending, setExtending] = useState<Order | null>(null)
+  const [renting, setRenting] = useState<{ accountId: string; profileId: string } | null>(null)
 
   async function fetchOrders() {
     const [{ data: ordData }, { data: accData }] = await Promise.all([
       supabase.from('orders').select('*, profiles(*, accounts(id, name))').order('created_at', { ascending: false }),
-      supabase.from('accounts').select('id, name').order('created_at'),
+      supabase.from('accounts').select('*, profiles(*)').order('created_at'),
     ])
     setOrders(ordData ?? [])
-    setAccounts(accData ?? [])
+    setAccounts((accData ?? []) as unknown as AccountWithProfiles[])
     setLoading(false)
   }
 
@@ -41,7 +50,13 @@ export default function Orders() {
     localStorage.setItem('orders-view', mode)
   }
 
+  const bookedProfileIds = new Set(orders.filter(o => o.status === 'booked').map(o => o.profile_id))
+  const availableProfiles = accounts.flatMap(acc => acc.profiles
+    .filter(p => p.is_rentable && !bookedProfileIds.has(p.id) && (selectedAccount === 'all' || acc.id === selectedAccount))
+    .map(p => ({ ...p, account: acc })))
+
   const filtered = orders.filter(o => {
+    if (filterStatus === 'available') return false
     if (selectedAccount !== 'all' && o.profiles.accounts.id !== selectedAccount) return false
     if (filterStatus !== 'all' && o.status !== filterStatus) return false
     if (search) {
@@ -53,8 +68,23 @@ export default function Orders() {
     return true
   })
 
+  const visibleAvailable = availableProfiles.filter(p => {
+    if (!search) return true
+    const q = search.toLowerCase()
+    return p.name.toLowerCase().includes(q) || p.account.name.toLowerCase().includes(q) || p.pin?.includes(q)
+  })
+
   async function markDone(id: string) {
-    await supabase.from('orders').update({ status: 'done' }).eq('id', id)
+    const { error } = await completeOrder(id)
+    if (error) { toast.error(error.message); return }
+    toast.success('Order selesai, PIN baru dibuat')
+    fetchOrders()
+  }
+
+  async function deleteOrder(id: string) {
+    const { error } = await supabase.from('orders').delete().eq('id', id)
+    if (error) { toast.error(error.message); return }
+    toast.success('Order dihapus')
     fetchOrders()
   }
 
@@ -67,9 +97,9 @@ export default function Orders() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Orders</h1>
-          <p className="text-muted-foreground">{filtered.length} dari {orders.length} order</p>
+          <p className="text-muted-foreground">{filterStatus === 'available' ? `${visibleAvailable.length} profil tersedia` : `${filtered.length} dari ${orders.length} order`}</p>
         </div>
-        <AddOrderDialog onAdded={fetchOrders} />
+        <AddOrderDialog onSaved={fetchOrders} />
       </div>
 
       <div className="flex gap-1.5 flex-wrap">
@@ -90,9 +120,9 @@ export default function Orders() {
         </div>
         <div className="flex items-center gap-2">
           <div className="flex gap-1">
-            {(['all', 'booked', 'done'] as const).map(s => (
+            {(['available', 'booked', 'done', 'all'] as const).map(s => (
               <Button key={s} variant={filterStatus === s ? 'default' : 'outline'} size="sm" onClick={() => setFilterStatus(s)}>
-                {s === 'all' ? 'Semua' : s === 'booked' ? 'Booked' : 'Selesai'}
+                {s === 'available' ? 'Tersedia' : s === 'all' ? 'Semua' : s === 'booked' ? 'Booked' : 'Selesai'}
               </Button>
             ))}
           </div>
@@ -107,7 +137,62 @@ export default function Orders() {
         </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {filterStatus === 'available' ? (
+        visibleAvailable.length === 0 ? (
+          <div className="rounded-lg border border-dashed py-12 text-center text-muted-foreground">Tidak ada profil tersedia.</div>
+        ) : viewMode === 'list' ? (
+          <div className="rounded-lg border overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10">#</TableHead>
+                  <TableHead>Profil</TableHead>
+                  <TableHead>Akun</TableHead>
+                  <TableHead>PIN</TableHead>
+                  <TableHead className="w-32 text-right">Aksi</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {visibleAvailable.map((p, i) => (
+                  <TableRow key={p.id}>
+                    <TableCell className="text-muted-foreground text-sm">{i + 1}</TableCell>
+                    <TableCell className="font-medium">{p.name}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{p.account.name.split('@')[0]}</TableCell>
+                    <TableCell><ProfilePinStatus profile={p} onChanged={fetchOrders} compact /></TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-0.5">
+                        <EditProfileDialog profile={p} onSaved={fetchOrders} size="icon-xs" />
+                        <Button size="sm" onClick={() => setRenting({ accountId: p.account.id, profileId: p.id })}>Sewakan</Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {visibleAvailable.map(p => (
+              <Card key={p.id} className="border-emerald-500/20 bg-emerald-500/8 dark:bg-emerald-500/10">
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold truncate">{p.name}</p>
+                      <p className="text-sm text-muted-foreground truncate">{p.account.name.split('@')[0]}</p>
+                    </div>
+                    <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">Tersedia</Badge>
+                  </div>
+                  <ProfilePinStatus profile={p} onChanged={fetchOrders} />
+                  <div className="flex justify-end gap-1 border-t pt-2">
+                    <EditProfileDialog profile={p} onSaved={fetchOrders} size="icon-xs" />
+                    <Button size="sm" onClick={() => setRenting({ accountId: p.account.id, profileId: p.id })}>Sewakan</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )
+      ) : filtered.length === 0 ? (
         <div className="rounded-lg border border-dashed py-12 text-center text-muted-foreground">
           {orders.length === 0 ? 'Belum ada order.' : 'Tidak ada hasil.'}
         </div>
@@ -125,7 +210,7 @@ export default function Orders() {
                 <TableHead>Beres</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Catatan</TableHead>
-                <TableHead className="w-10"></TableHead>
+                <TableHead className="w-32 text-right">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -133,24 +218,32 @@ export default function Orders() {
                 <TableRow key={o.id} className={o.status === 'booked' ? 'bg-primary/5' : ''}>
                   <TableCell className="text-muted-foreground text-sm">{i + 1}</TableCell>
                   <TableCell>
-                    <div className="font-medium">{o.profiles.name}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium">{o.profiles.name}</span>
+                      <ProfilePinStatus profile={o.profiles} onChanged={fetchOrders} compact />
+                    </div>
                     <div className="text-sm text-muted-foreground">{o.profiles.accounts.name.split('@')[0]}</div>
                   </TableCell>
                   <TableCell className="font-medium">{o.customer_name}</TableCell>
                   <TableCell>{PACKAGES[o.package]?.label ?? o.package}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatRupiah(o.price)}</TableCell>
                   <TableCell className="tabular-nums">{formatDate(o.start_date)}</TableCell>
-                  <TableCell className="tabular-nums">{formatDate(o.end_date)}</TableCell>
+                  <TableCell className="tabular-nums">
+                    <div>{formatDate(o.end_date)}</div>
+                    <div className="text-xs text-muted-foreground">Logout {formatTime(o.logout_time)} WIB</div>
+                  </TableCell>
                   <TableCell>
                     <StatusBadge status={o.status} endDate={o.end_date} today={today} />
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground max-w-[150px] truncate">{o.notes}</TableCell>
                   <TableCell>
-                    {o.status === 'booked' && (
-                      <Button variant="ghost" size="icon-xs" onClick={() => markDone(o.id)} title="Tandai selesai">
-                        <CheckCircle2 className="size-4 text-green-500" />
-                      </Button>
-                    )}
+                    <OrderActions
+                      order={o}
+                      onExtend={() => setExtending(o)}
+                      onMarkDone={() => markDone(o.id)}
+                      onDelete={() => deleteOrder(o.id)}
+                      onEdited={fetchOrders}
+                    />
                   </TableCell>
                 </TableRow>
               ))}
@@ -165,10 +258,15 @@ export default function Orders() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-base font-semibold truncate">{o.customer_name}</p>
-                    <p className="text-sm text-muted-foreground">{o.profiles.name} · {o.profiles.accounts.name.split('@')[0]}</p>
+                    <p className="text-sm text-muted-foreground truncate">
+                      {o.profiles.name}
+                      {' · '}{o.profiles.accounts.name.split('@')[0]}
+                    </p>
                   </div>
                   <StatusBadge status={o.status} endDate={o.end_date} today={today} />
                 </div>
+
+                <ProfilePinStatus profile={o.profiles} onChanged={fetchOrders} />
 
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div className="flex items-center gap-1.5 text-muted-foreground">
@@ -183,26 +281,143 @@ export default function Orders() {
                     <span>{formatDate(o.start_date)}</span>
                   </div>
                   <div className="text-right text-muted-foreground tabular-nums">
-                    s/d {formatDate(o.end_date)}
+                    s/d {formatDate(o.end_date)} · {formatTime(o.logout_time)} WIB
                   </div>
                 </div>
 
-                {(o.notes || o.status === 'booked') && (
-                  <div className="flex items-center justify-between pt-1 border-t border-border/50">
-                    {o.notes ? <p className="text-sm text-muted-foreground truncate">{o.notes}</p> : <span />}
-                    {o.status === 'booked' && (
-                      <Button variant="ghost" size="xs" onClick={() => markDone(o.id)} className="text-green-500 shrink-0">
-                        <CheckCircle2 className="size-3.5" /> Selesai
-                      </Button>
-                    )}
-                  </div>
+                {o.notes && (
+                  <p className="text-sm text-muted-foreground truncate pt-1 border-t border-border/50">{o.notes}</p>
                 )}
+
+                <div className="flex items-center justify-end gap-0.5 pt-1 border-t border-border/50">
+                  <OrderActions
+                    order={o}
+                    onExtend={() => setExtending(o)}
+                    onMarkDone={() => markDone(o.id)}
+                    onDelete={() => deleteOrder(o.id)}
+                    onEdited={fetchOrders}
+                  />
+                </div>
               </CardContent>
             </Card>
           ))}
         </div>
       )}
+
+      <AddOrderDialog
+        open={!!extending}
+        onOpenChange={(v: boolean) => { if (!v) setExtending(null) }}
+        extend={extending ?? undefined}
+        onSaved={fetchOrders}
+      />
+      <AddOrderDialog
+        open={!!renting}
+        onOpenChange={(v: boolean) => { if (!v) setRenting(null) }}
+        initial={renting ?? undefined}
+        onSaved={fetchOrders}
+      />
     </div>
+  )
+}
+
+function OrderActions({
+  order, onExtend, onMarkDone, onDelete, onEdited,
+}: {
+  order: OrderWithProfile
+  onExtend: () => void
+  onMarkDone: () => void
+  onDelete: () => void
+  onEdited: () => void
+}) {
+  return (
+    <div className="flex items-center justify-end gap-0.5">
+      <EditOrderDialog order={order} onSaved={onEdited} />
+      {order.status === 'booked' && (
+        <>
+          <Button variant="ghost" size="icon-xs" onClick={onExtend} title="Perpanjang">
+            <RefreshCw className="size-3.5 text-primary" />
+          </Button>
+          <ConfirmDialog
+            title="Tandai selesai?"
+            message={`Order untuk ${order.customer_name} akan ditandai selesai.`}
+            confirmLabel="Selesai"
+            onConfirm={onMarkDone}
+            trigger={<Button variant="ghost" size="icon-xs" title="Tandai selesai" />}
+          >
+            <CheckCircle2 className="size-3.5 text-green-500" />
+          </ConfirmDialog>
+        </>
+      )}
+      <ConfirmDialog
+        title="Hapus order?"
+        message={`Order ${order.customer_name} (${PACKAGES[order.package]?.label}) akan dihapus permanen.`}
+        confirmLabel="Hapus"
+        destructive
+        onConfirm={onDelete}
+        trigger={<Button variant="ghost" size="icon-xs" title="Hapus" />}
+      >
+        <Trash2 className="size-3.5 text-destructive" />
+      </ConfirmDialog>
+    </div>
+  )
+}
+
+function EditOrderDialog({ order, onSaved }: { order: OrderWithProfile; onSaved: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [customerName, setCustomerName] = useState(order.customer_name)
+  const [logoutTime, setLogoutTime] = useState(order.logout_time?.slice(0, 5) ?? '23:59')
+  const [notes, setNotes] = useState(order.notes ?? '')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      setCustomerName(order.customer_name)
+      setLogoutTime(order.logout_time?.slice(0, 5) ?? '23:59')
+      setNotes(order.notes ?? '')
+    }
+  }, [open, order])
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!customerName.trim()) return
+    setBusy(true)
+    const { error } = await supabase.from('orders').update({
+      customer_name: customerName.trim(),
+      logout_time: logoutTime,
+      notes: notes || null,
+    }).eq('id', order.id)
+    setBusy(false)
+    if (error) { toast.error(error.message); return }
+    toast.success('Order diupdate')
+    setOpen(false)
+    onSaved()
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="ghost" size="icon-xs" title="Edit" />}>
+        <Pencil className="size-3.5" />
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Edit Order</DialogTitle></DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label>Nama Pembeli</Label>
+            <Input value={customerName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCustomerName(e.target.value)} required />
+          </div>
+          <LogoutTimeField value={logoutTime} onChange={setLogoutTime} />
+          <div className="space-y-2">
+            <Label>Catatan</Label>
+            <Textarea value={notes} onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(e.target.value)} rows={2} />
+          </div>
+          <p className="text-xs text-muted-foreground">Paket/tanggal/profil tidak bisa diubah. Hapus dan buat order baru kalau perlu.</p>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>Batal</DialogClose>
+            <Button type="submit" disabled={busy}>Simpan</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -225,140 +440,6 @@ function formatDate(d: string) {
   return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-function AddOrderDialog({ onAdded }: { onAdded: () => void }) {
-  const [open, setOpen] = useState(false)
-  const [accounts, setAccounts] = useState<(Account & { profiles: Profile[] })[]>([])
-  const [accountId, setAccountId] = useState('')
-  const [profileId, setProfileId] = useState('')
-  const [customerName, setCustomerName] = useState('')
-  const [pkg, setPkg] = useState<PackageType | ''>('')
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0])
-  const [notes, setNotes] = useState('')
-
-  useEffect(() => {
-    if (!open) return
-    supabase.from('accounts').select('*, profiles(*)').order('name').then(({ data }: { data: (Account & { profiles: Profile[] })[] | null }) => {
-      setAccounts(data ?? [])
-    })
-  }, [open])
-
-  const availableProfiles = accounts
-    .find((a: Account & { profiles: Profile[] }) => a.id === accountId)
-    ?.profiles.filter((p: Profile) => p.is_rentable) ?? []
-
-  const endDate = pkg && startDate ? calculateEndDate(startDate, pkg as PackageType) : ''
-  const price = pkg ? PACKAGES[pkg as PackageType].price : 0
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!profileId || !pkg || !customerName.trim()) return
-    await supabase.from('orders').insert({
-      profile_id: profileId,
-      customer_name: customerName.trim(),
-      package: pkg,
-      price,
-      start_date: startDate,
-      end_date: endDate,
-      notes: notes || null,
-    })
-    setAccountId(''); setProfileId(''); setCustomerName(''); setPkg(''); setNotes('')
-    setStartDate(new Date().toISOString().split('T')[0])
-    setOpen(false)
-    onAdded()
-  }
-
-  function handleAccountChange(v: string | null) {
-    setAccountId(v ?? '')
-    setProfileId('')
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button size="sm" />}>
-        <Plus className="size-4" /> Tambah Order
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader><DialogTitle>Tambah Order Baru</DialogTitle></DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label>Akun Netflix</Label>
-            <Select value={accountId} onValueChange={handleAccountChange}>
-              <SelectTrigger>
-                <SelectValue placeholder="Pilih akun">
-                  {(v: string | null) => accounts.find(a => a.id === v)?.name ?? 'Pilih akun'}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {accounts.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {accountId && (
-            <div className="space-y-2">
-              <Label>Profil</Label>
-              <Select value={profileId} onValueChange={(v: string | null) => setProfileId(v ?? '')}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih profil">
-                    {(v: string | null) => { const p = availableProfiles.find((p: Profile) => p.id === v); return p ? `${p.name}${p.pin ? ` (${p.pin})` : ''}` : 'Pilih profil' }}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {availableProfiles.map((p: Profile) => <SelectItem key={p.id} value={p.id}>{p.name} {p.pin ? `(${p.pin})` : ''}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label>Nama Pembeli</Label>
-            <Input value={customerName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCustomerName(e.target.value)} placeholder="Nama pembeli" required />
-          </div>
-
-          <div className="space-y-2">
-            <Label>Paket Sewa</Label>
-            <Select value={pkg} onValueChange={(v: string | null) => setPkg((v ?? '') as PackageType | '')}>
-              <SelectTrigger>
-                <SelectValue placeholder="Pilih paket">
-                  {(v: string | null) => { const p = v ? PACKAGES[v as PackageType] : null; return p ? `${p.label} — ${formatRupiah(p.price)}` : 'Pilih paket' }}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(PACKAGES).map(([k, v]) => (
-                  <SelectItem key={k} value={k}>{v.label} — {formatRupiah(v.price)}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Tanggal Mulai</Label>
-              <Input type="date" value={startDate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStartDate(e.target.value)} required />
-            </div>
-            <div className="space-y-2">
-              <Label>Tanggal Beres</Label>
-              <Input type="date" value={endDate} readOnly className="bg-muted" />
-            </div>
-          </div>
-
-          {pkg && (
-            <div className="rounded-lg bg-primary/10 px-3 py-2 text-sm font-medium">
-              Harga: {formatRupiah(price)}
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label>Catatan (opsional)</Label>
-            <Textarea value={notes} onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(e.target.value)} placeholder="e.g. log out 13.35" rows={2} />
-          </div>
-
-          <DialogFooter>
-            <DialogClose render={<Button variant="outline" />}>Batal</DialogClose>
-            <Button type="submit">Simpan Order</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
+function formatTime(t?: string | null) {
+  return (t ?? '23:59').slice(0, 5)
 }

@@ -21,6 +21,8 @@ create table netflix.profiles (
   account_id uuid not null references netflix.accounts(id) on delete cascade,
   name text not null,
   pin text,
+  old_pin text,
+  pin_change_pending boolean not null default false,
   is_rentable boolean not null default true,
   created_at timestamptz not null default now()
 );
@@ -33,6 +35,7 @@ create table netflix.orders (
   price integer not null,
   start_date date not null,
   end_date date not null,
+  logout_time time not null default '23:59',
   status text not null default 'booked' check (status in ('booked', 'done')),
   notes text,
   created_at timestamptz not null default now()
@@ -41,6 +44,45 @@ create table netflix.orders (
 create index idx_orders_profile on netflix.orders(profile_id);
 create index idx_orders_status on netflix.orders(status);
 create index idx_profiles_account on netflix.profiles(account_id);
+
+create or replace function netflix.complete_order_and_rotate_pin(p_order_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = netflix, public
+as $$
+declare
+  v_profile_id uuid;
+  v_old_pin text;
+  v_new_pin text;
+begin
+  select o.profile_id, p.pin
+    into v_profile_id, v_old_pin
+  from netflix.orders o
+  join netflix.profiles p on p.id = o.profile_id
+  where o.id = p_order_id and o.status = 'booked'
+  for update of o, p;
+
+  if v_profile_id is null then
+    return;
+  end if;
+
+  loop
+    v_new_pin := lpad(floor(random() * 10000)::int::text, 4, '0');
+    exit when v_new_pin is distinct from v_old_pin;
+  end loop;
+
+  update netflix.profiles
+  set old_pin = v_old_pin,
+      pin = v_new_pin,
+      pin_change_pending = true
+  where id = v_profile_id;
+
+  update netflix.orders
+  set status = 'done'
+  where id = p_order_id;
+end;
+$$;
 
 -- RLS
 alter table netflix.accounts enable row level security;

@@ -2,15 +2,28 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatRupiah } from '@/lib/constants'
 import type { Account, Profile } from '@/types/database'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from '@/components/ui/dialog'
-import { Plus, Trash2, Eye, EyeOff, Pencil } from 'lucide-react'
+import ConfirmDialog from '@/components/ConfirmDialog'
+import ProfilePinStatus from '@/components/ProfilePinStatus'
+import EditProfileDialog from '@/components/EditProfileDialog'
+import { Plus, Trash2, Eye, EyeOff, Pencil, Copy } from 'lucide-react'
 
 type AccountWithProfiles = Account & { profiles: Profile[] }
+
+async function copyText(text: string, label: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    toast.success(`${label} disalin`)
+  } catch {
+    toast.error('Gagal menyalin')
+  }
+}
 
 export default function Accounts() {
   const [accounts, setAccounts] = useState<AccountWithProfiles[]>([])
@@ -60,8 +73,9 @@ function AccountCard({ account, onChanged }: { account: AccountWithProfiles; onC
   const [showPw, setShowPw] = useState(false)
 
   async function deleteAccount() {
-    if (!confirm(`Hapus akun "${account.name}" dan semua data terkait?`)) return
-    await supabase.from('accounts').delete().eq('id', account.id)
+    const { error } = await supabase.from('accounts').delete().eq('id', account.id)
+    if (error) { toast.error(error.message); return }
+    toast.success('Akun dihapus')
     onChanged()
   }
 
@@ -69,18 +83,37 @@ function AccountCard({ account, onChanged }: { account: AccountWithProfiles; onC
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <CardTitle className="truncate text-base">{account.name}</CardTitle>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1">
+              <CardTitle className="truncate text-base">{account.name}</CardTitle>
+              <Button variant="ghost" size="icon-xs" onClick={() => copyText(account.name, 'Email')} title="Copy email">
+                <Copy className="size-3.5" />
+              </Button>
+            </div>
             {account.password && (
-              <button onClick={() => setShowPw(!showPw)} className="mt-1.5 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-                {showPw ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-                {showPw ? account.password : '••••••••'}
-              </button>
+              <div className="mt-1.5 flex items-center gap-1">
+                <button onClick={() => setShowPw(!showPw)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  {showPw ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                  {showPw ? account.password : '••••••••'}
+                </button>
+                <Button variant="ghost" size="icon-xs" onClick={() => copyText(account.password!, 'Password')} title="Copy password">
+                  <Copy className="size-3.5" />
+                </Button>
+              </div>
             )}
           </div>
           <div className="flex items-center gap-1">
             <EditAccountDialog account={account} onSaved={onChanged} />
-            <Button variant="ghost" size="icon-sm" onClick={deleteAccount}><Trash2 className="size-4 text-destructive" /></Button>
+            <ConfirmDialog
+              title="Hapus akun?"
+              message={`Akun "${account.name}" dan semua profil + order terkait akan dihapus permanen.`}
+              confirmLabel="Hapus"
+              destructive
+              onConfirm={deleteAccount}
+              trigger={<Button variant="ghost" size="icon-sm" title="Hapus akun" />}
+            >
+              <Trash2 className="size-4 text-destructive" />
+            </ConfirmDialog>
           </div>
         </div>
         <p className="text-sm text-muted-foreground">Langganan: {formatRupiah(account.subscription_cost)}/bulan</p>
@@ -102,30 +135,33 @@ function AccountCard({ account, onChanged }: { account: AccountWithProfiles; onC
 
 function ProfileRow({ profile, onChanged }: { profile: Profile; onChanged: () => void }) {
   async function deleteProfile() {
-    if (!confirm(`Hapus profil "${profile.name}"?`)) return
-    await supabase.from('profiles').delete().eq('id', profile.id)
-    onChanged()
-  }
-
-  async function toggleRentable() {
-    await supabase.from('profiles').update({ is_rentable: !profile.is_rentable }).eq('id', profile.id)
+    const { error } = await supabase.from('profiles').delete().eq('id', profile.id)
+    if (error) { toast.error(error.message); return }
+    toast.success('Profil dihapus')
     onChanged()
   }
 
   return (
     <div className="flex items-center justify-between rounded-xl bg-muted/50 px-4 py-3">
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2.5 min-w-0">
         <span className="text-base">{profile.name}</span>
-        {profile.pin && <span className="text-sm text-muted-foreground">PIN: {profile.pin}</span>}
+        <ProfilePinStatus profile={profile} onChanged={onChanged} />
         <Badge variant={profile.is_rentable ? 'default' : 'secondary'} className="text-xs">
           {profile.is_rentable ? 'Disewakan' : 'Utama'}
         </Badge>
       </div>
       <div className="flex items-center gap-1">
-        <Button variant="ghost" size="icon-sm" onClick={toggleRentable} title={profile.is_rentable ? 'Set sebagai utama' : 'Set untuk disewakan'}>
-          <Pencil className="size-3.5" />
-        </Button>
-        <Button variant="ghost" size="icon-sm" onClick={deleteProfile}><Trash2 className="size-3.5 text-destructive" /></Button>
+        <EditProfileDialog profile={profile} onSaved={onChanged} />
+        <ConfirmDialog
+          title="Hapus profil?"
+          message={`Profil "${profile.name}" akan dihapus.`}
+          confirmLabel="Hapus"
+          destructive
+          onConfirm={deleteProfile}
+          trigger={<Button variant="ghost" size="icon-sm" title="Hapus profil" />}
+        >
+          <Trash2 className="size-3.5 text-destructive" />
+        </ConfirmDialog>
       </div>
     </div>
   )
@@ -136,11 +172,16 @@ function AddAccountDialog({ onAdded }: { onAdded: () => void }) {
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [cost, setCost] = useState('')
+  const [busy, setBusy] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim()) return
-    await supabase.from('accounts').insert({ name: name.trim(), password: password || null, subscription_cost: Number(cost) || 0 })
+    setBusy(true)
+    const { error } = await supabase.from('accounts').insert({ name: name.trim(), password: password || null, subscription_cost: Number(cost) || 0 })
+    setBusy(false)
+    if (error) { toast.error(error.message); return }
+    toast.success('Akun ditambahkan')
     setName(''); setPassword(''); setCost('')
     setOpen(false)
     onAdded()
@@ -168,7 +209,7 @@ function AddAccountDialog({ onAdded }: { onAdded: () => void }) {
           </div>
           <DialogFooter>
             <DialogClose render={<Button variant="outline" />}>Batal</DialogClose>
-            <Button type="submit">Simpan</Button>
+            <Button type="submit" disabled={busy}>Simpan</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -181,14 +222,19 @@ function EditAccountDialog({ account, onSaved }: { account: Account; onSaved: ()
   const [name, setName] = useState(account.name)
   const [password, setPassword] = useState(account.password ?? '')
   const [cost, setCost] = useState(String(account.subscription_cost))
+  const [busy, setBusy] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    await supabase.from('accounts').update({
+    setBusy(true)
+    const { error } = await supabase.from('accounts').update({
       name: name.trim(),
       password: password || null,
       subscription_cost: Number(cost) || 0,
     }).eq('id', account.id)
+    setBusy(false)
+    if (error) { toast.error(error.message); return }
+    toast.success('Akun diupdate')
     setOpen(false)
     onSaved()
   }
@@ -215,7 +261,7 @@ function EditAccountDialog({ account, onSaved }: { account: Account; onSaved: ()
           </div>
           <DialogFooter>
             <DialogClose render={<Button variant="outline" />}>Batal</DialogClose>
-            <Button type="submit">Simpan</Button>
+            <Button type="submit" disabled={busy}>Simpan</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -228,11 +274,16 @@ function AddProfileDialog({ accountId, onAdded }: { accountId: string; onAdded: 
   const [name, setName] = useState('')
   const [pin, setPin] = useState('')
   const [isRentable, setIsRentable] = useState(true)
+  const [busy, setBusy] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!name.trim()) return
-    await supabase.from('profiles').insert({ account_id: accountId, name: name.trim(), pin: pin || null, is_rentable: isRentable })
+    if (!name.trim() || !pin.trim()) return
+    setBusy(true)
+    const { error } = await supabase.from('profiles').insert({ account_id: accountId, name: name.trim(), pin: pin.trim(), is_rentable: isRentable })
+    setBusy(false)
+    if (error) { toast.error(error.message); return }
+    toast.success('Profil ditambahkan')
     setName(''); setPin(''); setIsRentable(true)
     setOpen(false)
     onAdded()
@@ -251,8 +302,8 @@ function AddProfileDialog({ accountId, onAdded }: { accountId: string; onAdded: 
             <Input value={name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)} placeholder="e.g. kulkas, sendal" required />
           </div>
           <div className="space-y-2">
-            <Label>PIN (opsional)</Label>
-            <Input value={pin} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPin(e.target.value)} placeholder="1234" maxLength={4} />
+            <Label>PIN</Label>
+            <Input value={pin} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPin(e.target.value)} placeholder="1234" maxLength={4} required inputMode="numeric" pattern="[0-9]{4}" />
           </div>
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={isRentable} onChange={e => setIsRentable(e.target.checked)} className="accent-primary size-4" />
@@ -260,7 +311,7 @@ function AddProfileDialog({ accountId, onAdded }: { accountId: string; onAdded: 
           </label>
           <DialogFooter>
             <DialogClose render={<Button variant="outline" />}>Batal</DialogClose>
-            <Button type="submit">Simpan</Button>
+            <Button type="submit" disabled={busy}>Simpan</Button>
           </DialogFooter>
         </form>
       </DialogContent>
