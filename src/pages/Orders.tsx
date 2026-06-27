@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { supabase, autoCompleteOrders, completeOrder } from '@/lib/supabase'
 import { PACKAGES, formatRupiah } from '@/lib/constants'
 import type { Account, Profile, OrderWithProfile, Order } from '@/types/database'
@@ -27,6 +27,7 @@ export default function Orders() {
   const [accounts, setAccounts] = useState<AccountWithProfiles[]>([])
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<OrderFilter>('booked')
+  const [cardSections, setCardSections] = useState({ available: true, booked: true, done: false })
   const [selectedAccount, setSelectedAccount] = useState<string>('all')
   const [viewMode, setViewMode] = useState<ViewMode>(() => (localStorage.getItem('orders-view') as ViewMode) || 'list')
   const [loading, setLoading] = useState(true)
@@ -50,29 +51,44 @@ export default function Orders() {
     localStorage.setItem('orders-view', mode)
   }
 
+  function toggleCardSection(section: 'available' | 'booked' | 'done') {
+    setCardSections(prev => {
+      const activeCount = Number(prev.available) + Number(prev.booked) + Number(prev.done)
+      if (prev[section] && activeCount === 1) return prev
+      return { ...prev, [section]: !prev[section] }
+    })
+  }
+
   const bookedProfileIds = new Set(orders.filter(o => o.status === 'booked').map(o => o.profile_id))
   const availableProfiles = accounts.flatMap(acc => acc.profiles
     .filter(p => p.is_rentable && !bookedProfileIds.has(p.id) && (selectedAccount === 'all' || acc.id === selectedAccount))
     .map(p => ({ ...p, account: acc })))
 
+  function orderMatchesSearch(o: OrderWithProfile) {
+    if (selectedAccount !== 'all' && o.profiles.accounts.id !== selectedAccount) return false
+    if (!search) return true
+    const q = search.toLowerCase()
+    return o.customer_name.toLowerCase().includes(q) ||
+      o.profiles.name.toLowerCase().includes(q) ||
+      o.profiles.accounts.name.toLowerCase().includes(q)
+  }
+
   const filtered = orders.filter(o => {
     if (filterStatus === 'available') return false
-    if (selectedAccount !== 'all' && o.profiles.accounts.id !== selectedAccount) return false
+    if (!orderMatchesSearch(o)) return false
     if (filterStatus !== 'all' && o.status !== filterStatus) return false
-    if (search) {
-      const q = search.toLowerCase()
-      return o.customer_name.toLowerCase().includes(q) ||
-        o.profiles.name.toLowerCase().includes(q) ||
-        o.profiles.accounts.name.toLowerCase().includes(q)
-    }
     return true
   })
+
+  const visibleBooked = orders.filter(o => o.status === 'booked' && orderMatchesSearch(o))
+  const visibleDone = orders.filter(o => o.status === 'done' && orderMatchesSearch(o))
 
   const visibleAvailable = availableProfiles.filter(p => {
     if (!search) return true
     const q = search.toLowerCase()
     return p.name.toLowerCase().includes(q) || p.account.name.toLowerCase().includes(q) || p.pin?.includes(q)
   })
+  const activeCardSectionCount = Number(cardSections.available) + Number(cardSections.booked) + Number(cardSections.done)
 
   async function markDone(id: string) {
     const { error } = await completeOrder(id)
@@ -97,7 +113,7 @@ export default function Orders() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Orders</h1>
-          <p className="text-muted-foreground">{filterStatus === 'available' ? `${visibleAvailable.length} profil tersedia` : `${filtered.length} dari ${orders.length} order`}</p>
+          <p className="text-muted-foreground">{viewMode === 'card' ? `${visibleAvailable.length} tersedia · ${visibleBooked.length} booked · ${visibleDone.length} selesai` : filterStatus === 'available' ? `${visibleAvailable.length} profil tersedia` : `${filtered.length} dari ${orders.length} order`}</p>
         </div>
         <AddOrderDialog onSaved={fetchOrders} />
       </div>
@@ -120,7 +136,11 @@ export default function Orders() {
         </div>
         <div className="flex items-center gap-2">
           <div className="flex gap-1">
-            {(['available', 'booked', 'done', 'all'] as const).map(s => (
+            {viewMode === 'card' ? (['available', 'booked', 'done'] as const).map(s => (
+              <Button key={s} variant={cardSections[s] ? 'default' : 'outline'} size="sm" onClick={() => toggleCardSection(s)}>
+                {s === 'available' ? 'Tersedia' : s === 'booked' ? 'Booked' : 'Selesai'}
+              </Button>
+            )) : (['available', 'booked', 'done', 'all'] as const).map(s => (
               <Button key={s} variant={filterStatus === s ? 'default' : 'outline'} size="sm" onClick={() => setFilterStatus(s)}>
                 {s === 'available' ? 'Tersedia' : s === 'all' ? 'Semua' : s === 'booked' ? 'Booked' : 'Selesai'}
               </Button>
@@ -137,10 +157,50 @@ export default function Orders() {
         </div>
       </div>
 
-      {filterStatus === 'available' ? (
+      {viewMode === 'card' ? (
+        <div className={`grid gap-4 ${activeCardSectionCount === 1 ? 'lg:grid-cols-1' : activeCardSectionCount === 2 ? 'lg:grid-cols-2' : 'lg:grid-cols-3'}`}>
+          {cardSections.available && (
+            <BoardColumn title="Tersedia" count={visibleAvailable.length} empty="Tidak ada profil tersedia.">
+              {visibleAvailable.map(p => (
+                <AvailableProfileCard key={p.id} profile={p} onChanged={fetchOrders} onRent={() => setRenting({ accountId: p.account.id, profileId: p.id })} />
+              ))}
+            </BoardColumn>
+          )}
+          {cardSections.booked && (
+            <BoardColumn title="Booked" count={visibleBooked.length} empty="Tidak ada order booked.">
+              {visibleBooked.map(o => (
+                <OrderCard
+                  key={o.id}
+                  order={o}
+                  today={today}
+                  onExtend={() => setExtending(o)}
+                  onMarkDone={() => markDone(o.id)}
+                  onDelete={() => deleteOrder(o.id)}
+                  onEdited={fetchOrders}
+                />
+              ))}
+            </BoardColumn>
+          )}
+          {cardSections.done && (
+            <BoardColumn title="Selesai" count={visibleDone.length} empty="Tidak ada order selesai.">
+              {visibleDone.map(o => (
+                <OrderCard
+                  key={o.id}
+                  order={o}
+                  today={today}
+                  onExtend={() => setExtending(o)}
+                  onMarkDone={() => markDone(o.id)}
+                  onDelete={() => deleteOrder(o.id)}
+                  onEdited={fetchOrders}
+                />
+              ))}
+            </BoardColumn>
+          )}
+        </div>
+      ) : filterStatus === 'available' ? (
         visibleAvailable.length === 0 ? (
           <div className="rounded-lg border border-dashed py-12 text-center text-muted-foreground">Tidak ada profil tersedia.</div>
-        ) : viewMode === 'list' ? (
+        ) : (
           <div className="rounded-lg border overflow-x-auto">
             <Table>
               <TableHeader>
@@ -170,33 +230,12 @@ export default function Orders() {
               </TableBody>
             </Table>
           </div>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {visibleAvailable.map(p => (
-              <Card key={p.id} className="border-emerald-500/20 bg-emerald-500/8 dark:bg-emerald-500/10">
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="font-semibold truncate">{p.name}</p>
-                      <p className="text-sm text-muted-foreground truncate">{p.account.name.split('@')[0]}</p>
-                    </div>
-                    <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">Tersedia</Badge>
-                  </div>
-                  <ProfilePinStatus profile={p} onChanged={fetchOrders} />
-                  <div className="flex justify-end gap-1 border-t pt-2">
-                    <EditProfileDialog profile={p} onSaved={fetchOrders} size="icon-xs" />
-                    <Button size="sm" onClick={() => setRenting({ accountId: p.account.id, profileId: p.id })}>Sewakan</Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
         )
       ) : filtered.length === 0 ? (
         <div className="rounded-lg border border-dashed py-12 text-center text-muted-foreground">
           {orders.length === 0 ? 'Belum ada order.' : 'Tidak ada hasil.'}
         </div>
-      ) : viewMode === 'list' ? (
+      ) : (
         <div className="rounded-lg border overflow-x-auto">
           <Table>
             <TableHeader>
@@ -250,58 +289,6 @@ export default function Orders() {
             </TableBody>
           </Table>
         </div>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map(o => (
-            <Card key={o.id} className={`overflow-hidden ${o.status === 'booked' ? 'border-primary/20' : ''}`}>
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-base font-semibold truncate">{o.customer_name}</p>
-                    <p className="text-sm text-muted-foreground truncate">
-                      {o.profiles.name}
-                      {' · '}{o.profiles.accounts.name.split('@')[0]}
-                    </p>
-                  </div>
-                  <StatusBadge status={o.status} endDate={o.end_date} today={today} />
-                </div>
-
-                <ProfilePinStatus profile={o.profiles} onChanged={fetchOrders} />
-
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div className="flex items-center gap-1.5 text-muted-foreground">
-                    <Tag className="size-3.5" />
-                    <span>{PACKAGES[o.package]?.label ?? o.package}</span>
-                  </div>
-                  <div className="text-right font-semibold tabular-nums">
-                    {formatRupiah(o.price)}
-                  </div>
-                  <div className="flex items-center gap-1.5 text-muted-foreground">
-                    <Calendar className="size-3.5" />
-                    <span>{formatDate(o.start_date)}</span>
-                  </div>
-                  <div className="text-right text-muted-foreground tabular-nums">
-                    s/d {formatDate(o.end_date)} · {formatTime(o.logout_time)} WIB
-                  </div>
-                </div>
-
-                {o.notes && (
-                  <p className="text-sm text-muted-foreground truncate pt-1 border-t border-border/50">{o.notes}</p>
-                )}
-
-                <div className="flex items-center justify-end gap-0.5 pt-1 border-t border-border/50">
-                  <OrderActions
-                    order={o}
-                    onExtend={() => setExtending(o)}
-                    onMarkDone={() => markDone(o.id)}
-                    onDelete={() => deleteOrder(o.id)}
-                    onEdited={fetchOrders}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
       )}
 
       <AddOrderDialog
@@ -317,6 +304,85 @@ export default function Orders() {
         onSaved={fetchOrders}
       />
     </div>
+  )
+}
+
+function BoardColumn({ title, count, empty, children }: { title: string; count: number; empty: string; children: ReactNode }) {
+  return (
+    <div className="rounded-2xl border bg-muted/20 p-3">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="font-semibold">{title}</h2>
+        <Badge variant="secondary">{count}</Badge>
+      </div>
+      <div className="space-y-3">
+        {count === 0 ? <div className="rounded-xl border border-dashed py-8 text-center text-sm text-muted-foreground">{empty}</div> : children}
+      </div>
+    </div>
+  )
+}
+
+function AvailableProfileCard({ profile, onChanged, onRent }: { profile: Profile & { account: AccountWithProfiles }; onChanged: () => void; onRent: () => void }) {
+  return (
+    <Card className="border-emerald-500/20 bg-emerald-500/8 dark:bg-emerald-500/10">
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="font-semibold truncate">{profile.name}</p>
+            <p className="text-sm text-muted-foreground truncate">{profile.account.name.split('@')[0]}</p>
+          </div>
+          <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">Tersedia</Badge>
+        </div>
+        <ProfilePinStatus profile={profile} onChanged={onChanged} />
+        <div className="flex justify-end gap-1 border-t pt-2">
+          <EditProfileDialog profile={profile} onSaved={onChanged} size="icon-xs" />
+          <Button size="sm" onClick={onRent}>Sewakan</Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function OrderCard({ order, today, onExtend, onMarkDone, onDelete, onEdited }: {
+  order: OrderWithProfile
+  today: string
+  onExtend: () => void
+  onMarkDone: () => void
+  onDelete: () => void
+  onEdited: () => void
+}) {
+  return (
+    <Card className={`overflow-hidden ${order.status === 'booked' ? 'border-primary/20' : ''}`}>
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-base font-semibold truncate">{order.customer_name}</p>
+            <p className="text-sm text-muted-foreground truncate">{order.profiles.name} · {order.profiles.accounts.name.split('@')[0]}</p>
+          </div>
+          <StatusBadge status={order.status} endDate={order.end_date} today={today} />
+        </div>
+
+        <ProfilePinStatus profile={order.profiles} onChanged={onEdited} />
+
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <Tag className="size-3.5" />
+            <span>{PACKAGES[order.package]?.label ?? order.package}</span>
+          </div>
+          <div className="text-right font-semibold tabular-nums">{formatRupiah(order.price)}</div>
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <Calendar className="size-3.5" />
+            <span>{formatDate(order.start_date)}</span>
+          </div>
+          <div className="text-right text-muted-foreground tabular-nums">s/d {formatDate(order.end_date)} · {formatTime(order.logout_time)} WIB</div>
+        </div>
+
+        {order.notes && <p className="text-sm text-muted-foreground truncate pt-1 border-t border-border/50">{order.notes}</p>}
+
+        <div className="flex items-center justify-end gap-0.5 pt-1 border-t border-border/50">
+          <OrderActions order={order} onExtend={onExtend} onMarkDone={onMarkDone} onDelete={onDelete} onEdited={onEdited} />
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -365,6 +431,7 @@ function OrderActions({
 function EditOrderDialog({ order, onSaved }: { order: OrderWithProfile; onSaved: () => void }) {
   const [open, setOpen] = useState(false)
   const [customerName, setCustomerName] = useState(order.customer_name)
+  const [price, setPrice] = useState(String(order.price))
   const [logoutTime, setLogoutTime] = useState(order.logout_time?.slice(0, 5) ?? '23:59')
   const [notes, setNotes] = useState(order.notes ?? '')
   const [busy, setBusy] = useState(false)
@@ -372,6 +439,7 @@ function EditOrderDialog({ order, onSaved }: { order: OrderWithProfile; onSaved:
   useEffect(() => {
     if (open) {
       setCustomerName(order.customer_name)
+      setPrice(String(order.price))
       setLogoutTime(order.logout_time?.slice(0, 5) ?? '23:59')
       setNotes(order.notes ?? '')
     }
@@ -383,6 +451,7 @@ function EditOrderDialog({ order, onSaved }: { order: OrderWithProfile; onSaved:
     setBusy(true)
     const { error } = await supabase.from('orders').update({
       customer_name: customerName.trim(),
+      price: Number(price) || order.price,
       logout_time: logoutTime,
       notes: notes || null,
     }).eq('id', order.id)
@@ -404,6 +473,10 @@ function EditOrderDialog({ order, onSaved }: { order: OrderWithProfile; onSaved:
           <div className="space-y-2">
             <Label>Nama Pembeli</Label>
             <Input value={customerName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCustomerName(e.target.value)} required />
+          </div>
+          <div className="space-y-2">
+            <Label>Harga</Label>
+            <Input type="number" value={price} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPrice(e.target.value)} required />
           </div>
           <LogoutTimeField value={logoutTime} onChange={setLogoutTime} />
           <div className="space-y-2">

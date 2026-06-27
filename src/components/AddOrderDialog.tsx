@@ -39,7 +39,9 @@ export default function AddOrderDialog({ onSaved, initial, extend, open: control
   const [profileId, setProfileId] = useState('')
   const [customerName, setCustomerName] = useState('')
   const [pkg, setPkg] = useState<PackageType | ''>('')
+  const [price, setPrice] = useState('')
   const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [endDate, setEndDate] = useState('')
   const [logoutTime, setLogoutTime] = useState('23:59')
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
@@ -55,8 +57,11 @@ export default function AddOrderDialog({ onSaved, initial, extend, open: control
         setAccountId(acc?.id ?? '')
         setProfileId(extend.profile_id)
         setCustomerName(extend.customer_name)
+        const nextStart = nextDay(extend.end_date)
         setPkg(extend.package)
-        setStartDate(nextDay(extend.end_date))
+        setPrice(String(extend.price))
+        setStartDate(nextStart)
+        setEndDate(calculateEndDate(nextStart, extend.package))
         setLogoutTime(extend.logout_time?.slice(0, 5) ?? '23:59')
         setNotes(extend.notes ?? '')
       } else if (initial) {
@@ -67,24 +72,24 @@ export default function AddOrderDialog({ onSaved, initial, extend, open: control
   }, [open, extend, initial])
 
   const availableProfiles = accounts.find(a => a.id === accountId)?.profiles.filter(p => p.is_rentable) ?? []
-  const endDate = pkg && startDate ? calculateEndDate(startDate, pkg as PackageType) : ''
-  const price = pkg ? PACKAGES[pkg as PackageType].price : 0
+  const finalPrice = pkg ? Number(price) || PACKAGES[pkg as PackageType].price : 0
 
   function reset() {
-    setAccountId(''); setProfileId(''); setCustomerName(''); setPkg(''); setNotes('')
+    setAccountId(''); setProfileId(''); setCustomerName(''); setPkg(''); setPrice(''); setNotes('')
     setStartDate(new Date().toISOString().split('T')[0])
+    setEndDate('')
     setLogoutTime('23:59')
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!profileId || !pkg || !customerName.trim()) return
+    if (!profileId || !pkg || !customerName.trim() || !endDate) return
     setBusy(true)
     const { error } = await supabase.from('orders').insert({
       profile_id: profileId,
       customer_name: customerName.trim(),
       package: pkg,
-      price,
+      price: finalPrice,
       start_date: startDate,
       end_date: endDate,
       logout_time: logoutTime,
@@ -101,6 +106,18 @@ export default function AddOrderDialog({ onSaved, initial, extend, open: control
   function handleAccountChange(v: string | null) {
     setAccountId(v ?? '')
     setProfileId('')
+  }
+
+  function handlePackageChange(v: string | null) {
+    const next = (v ?? '') as PackageType | ''
+    setPkg(next)
+    setPrice(next ? String(PACKAGES[next].price) : '')
+    setEndDate(next ? calculateEndDate(startDate, next) : '')
+  }
+
+  function handleStartDateChange(v: string) {
+    setStartDate(v)
+    if (pkg) setEndDate(calculateEndDate(v, pkg))
   }
 
   return (
@@ -150,7 +167,7 @@ export default function AddOrderDialog({ onSaved, initial, extend, open: control
 
           <div className="space-y-2">
             <Label>Paket Sewa</Label>
-            <Select value={pkg} onValueChange={(v: string | null) => setPkg((v ?? '') as PackageType | '')}>
+            <Select value={pkg} onValueChange={handlePackageChange}>
               <SelectTrigger>
                 <SelectValue placeholder="Pilih paket">
                   {(v: string | null) => { const p = v ? PACKAGES[v as PackageType] : null; return p ? `${p.label} — ${formatRupiah(p.price)}` : 'Pilih paket' }}
@@ -167,19 +184,21 @@ export default function AddOrderDialog({ onSaved, initial, extend, open: control
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>Tanggal Mulai</Label>
-              <Input type="date" value={startDate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStartDate(e.target.value)} required />
+              <Input type="date" value={startDate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleStartDateChange(e.target.value)} required />
             </div>
             <div className="space-y-2">
               <Label>Tanggal Beres</Label>
-              <Input type="date" value={endDate} readOnly className="bg-muted" />
+              <Input type="date" value={endDate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEndDate(e.target.value)} required />
             </div>
           </div>
 
           <LogoutTimeField value={logoutTime} onChange={setLogoutTime} />
 
           {pkg && (
-            <div className="rounded-lg bg-primary/10 px-3 py-2 text-sm font-medium">
-              Harga: {formatRupiah(price)}
+            <div className="space-y-2">
+              <Label>Harga</Label>
+              <Input type="number" value={price} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPrice(e.target.value)} placeholder={String(PACKAGES[pkg].price)} required />
+              <p className="text-xs text-muted-foreground">Default paket: {formatRupiah(PACKAGES[pkg].price)}</p>
             </div>
           )}
 
