@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import AddOrderDialog from '@/components/AddOrderDialog'
 import ProfilePinStatus from '@/components/ProfilePinStatus'
-import { DollarSign, TrendingUp, ShoppingCart, Tv, Clock, Plus } from 'lucide-react'
+import { DollarSign, TrendingUp, ShoppingCart, Tv, Clock, Plus, AlertTriangle } from 'lucide-react'
 
 type AccountWithProfiles = Account & { profiles: (Profile & { currentOrder?: Order })[] }
 type OrderWithAccount = Order & { profiles: { account_id: string } }
@@ -118,12 +118,32 @@ export default function Dashboard() {
 
   const countdown = useCountdown()
 
+  const pendingPins = accounts.flatMap(a => a.profiles.filter(p => p.pin_change_pending).map(p => ({ ...p, accountName: a.name })))
+
   if (loading) return <div className="flex items-center justify-center py-20 text-muted-foreground">Memuat...</div>
 
   const periodLabel = period === 'this_month' ? 'Bulan ini' : period === 'last_month' ? 'Bulan lalu' : 'Semua waktu'
 
   return (
     <div className="space-y-6">
+      {pendingPins.length > 0 && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="size-4 text-amber-500 shrink-0" />
+            <span className="text-sm font-semibold">{pendingPins.length} profil perlu ganti PIN di Netflix</span>
+          </div>
+          <ul className="ml-6 text-sm text-muted-foreground space-y-0.5">
+            {pendingPins.map(p => (
+              <li key={p.id}>
+                <b className="text-foreground">{p.name}</b>
+                <span> — {p.accountName.split('@')[0]}</span>
+                <span className="tabular-nums"> ({p.old_pin} → {p.pin})</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground">Ringkasan {periodLabel.toLowerCase()}</p>

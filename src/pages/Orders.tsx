@@ -16,7 +16,7 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import LogoutTimeField from '@/components/LogoutTimeField'
 import ProfilePinStatus from '@/components/ProfilePinStatus'
 import EditProfileDialog from '@/components/EditProfileDialog'
-import { Search, CheckCircle2, AlertTriangle, List, LayoutGrid, Calendar, Tag, RefreshCw, Pencil, Trash2 } from 'lucide-react'
+import { Search, CheckCircle2, AlertTriangle, List, LayoutGrid, Calendar, Tag, RefreshCw, Pencil, Trash2, KeyRound } from 'lucide-react'
 
 type ViewMode = 'list' | 'card'
 type AccountWithProfiles = Account & { profiles: Profile[] }
@@ -106,10 +106,30 @@ export default function Orders() {
 
   const today = new Date().toISOString().split('T')[0]
 
+  const pendingPins = accounts.flatMap(a => a.profiles.filter(p => p.pin_change_pending).map(p => ({ ...p, accountName: a.name })))
+
   if (loading) return <div className="flex items-center justify-center py-20 text-muted-foreground">Memuat...</div>
 
   return (
     <div className="space-y-4">
+      {pendingPins.length > 0 && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <KeyRound className="size-4 text-amber-500 shrink-0" />
+            <span className="text-sm font-semibold">{pendingPins.length} profil perlu ganti PIN di Netflix</span>
+          </div>
+          <ul className="ml-6 text-sm text-muted-foreground space-y-0.5">
+            {pendingPins.map(p => (
+              <li key={p.id}>
+                <b className="text-foreground">{p.name}</b>
+                <span> — {p.accountName.split('@')[0]}</span>
+                <span className="tabular-nums"> ({p.old_pin} → {p.pin})</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Orders</h1>
