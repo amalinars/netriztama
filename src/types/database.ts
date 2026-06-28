@@ -40,3 +40,12 @@ export type OrderWithProfile = Order & {
 }
 
 export type PackageType = '1_hari' | '2_hari' | '3_hari' | '1_minggu' | '1_bulan'
+
+export type CronLog = {
+  runid: number
+  status: string
+  return_message: string
+  start_time: string
+  end_time: string
+}
+
