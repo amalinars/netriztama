@@ -1,0 +1,375 @@
+{
+  "updatedAt": "2026-06-27T18:55:10.000Z",
+  "createdAt": "2026-06-27T17:23:03.867Z",
+  "id": "8f5b28d2-8e6a-4e5b-a2a0-6d1c2c0b7b11",
+  "name": "netflix-gmail",
+  "description": "Read Netflix emails from Gmail using HTTP Request nodes only (no Gmail node). Mark older Netflix emails as read, then extract today's unread verification codes plus message metadata.",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "2d2ab8b0-4a22-4d8b-9c0e-8d5405be0f49",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+        "method": "GET",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{'from:(netflix.com OR mail.netflix.com OR account.netflix.com OR info@account.netflix.com OR no-reply@mailer.netflix.com) (verification OR security OR sign-in OR login OR code OR password) after:' + $now.setZone('Asia/Jakarta').startOf('day').toFormat('yyyy/MM/dd') + ' before:' + $now.setZone('Asia/Jakarta').plus({ days: 1 }).startOf('day').toFormat('yyyy/MM/dd') + ' is:unread in:anywhere -in:spam -in:trash'}}"
+            },
+            {
+              "name": "maxResults",
+              "value": "10"
+            },
+            {
+              "name": "includeSpamTrash",
+              "value": "false"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "responseFormat": "json"
+          }
+        }
+      },
+      "id": "8d00f5c7-6fb8-4bc0-8d9b-0e6b52cd5bd1",
+      "name": "List Today's Netflix Unread",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        240,
+        0
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "6MbJjiAjqhbTBKbY",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $input.first()?.json ?? {};\nconst messages = Array.isArray(resp.messages) ? resp.messages : [];\nif (!messages.length) {\n  return [{\n    json: {\n      id: null,\n      threadId: null,\n      historyId: resp.historyId ?? null,\n      resultSizeEstimate: resp.resultSizeEstimate ?? 0,\n      hasMessages: false,\n      totalMessages: 0,\n      isEmpty: true,\n    },\n  }];\n}\n\nreturn messages.map((m) => ({\n  json: {\n    id: m.id,\n    threadId: m.threadId,\n    historyId: resp.historyId ?? null,\n    resultSizeEstimate: resp.resultSizeEstimate ?? null,\n    hasMessages: true,\n    totalMessages: messages.length,\n    isEmpty: false,\n  },\n}));"
+      },
+      "id": "2c2bcf1e-41ef-4d3e-b4d0-bf93c8e2cb6b",
+      "name": "Split Gmail Messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "url": "={{$json.id ? 'https://gmail.googleapis.com/gmail/v1/users/me/messages/' + $json.id + '?format=full' : 'https://gmail.googleapis.com/gmail/v1/users/me/profile'}}",
+        "method": "GET",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "responseFormat": "json"
+          }
+        }
+      },
+      "id": "f6fd2ae2-0b27-404f-9d9f-3db5f979e6c6",
+      "name": "Get Gmail Message Detail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        720,
+        0
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "6MbJjiAjqhbTBKbY",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first()?.json ?? {};\n\nif (!item.payload && !item.headers && !item.threadId) {\n  return [{\n    json: {\n      ok: true,\n      count: 0,\n      data: [],\n      items: [],\n      messages: [],\n      netflixCode: null,\n      codeSource: null,\n      message: 'Tidak ada email Netflix hari ini',\n    },\n  }];\n}\n\nconst headers = Array.isArray(item.payload?.headers) ? item.payload.headers : [];\nconst headerMap = Object.fromEntries(\n  headers\n    .filter((h) => h && h.name)\n    .map((h) => [String(h.name).toLowerCase(), h.value ?? null]),\n);\n\nconst subject = String(headerMap.subject ?? '');\nconst from = String(headerMap.from ?? '');\nconst snippet = String(item.snippet ?? '');\nconst bodyText = String(snippet);\nconst searchText = `${subject}\\n${bodyText}`;\n\nconst hintRegex = /(?:verification code|security code|sign(?:-|\\s)?in code|login code|one[-\\s]?time code|authentication code|use this code|your code is|code is)[\\s\\S]{0,120}?(\\d{6})/i;\nconst fallbackRegex = /\\b(\\d{6})\\b/;\nconst match = searchText.match(hintRegex) || searchText.match(fallbackRegex);\nconst netflixCode = match ? match[1] : null;\nconst codeSource = match ? (match[0] === match[1] ? 'fallback:6-digit' : 'hint') : null;\n\nreturn [{\n  json: {\n    messageId: item.id ?? null,\n    threadId: item.threadId ?? null,\n    labelIds: item.labelIds ?? [],\n    internalDate: item.internalDate ?? null,\n    receivedAt: item.internalDate ? new Date(Number(item.internalDate)).toISOString() : null,\n    from: headerMap.from ?? null,\n    to: headerMap.to ?? null,\n    cc: headerMap.cc ?? null,\n    bcc: headerMap.bcc ?? null,\n    replyTo: headerMap['reply-to'] ?? null,\n    subject: headerMap.subject ?? null,\n    date: headerMap.date ?? null,\n    fromDomain: (from.match(/@([A-Z0-9.-]+)\\b/i)?.[1] || '').toLowerCase(),\n    snippet: item.snippet ?? null,\n    bodyText,\n    netflixCode,\n    codeSource,\n    codeCandidates: netflixCode ? [{ source: codeSource, code: netflixCode }] : [],\n    isNetflixCandidate: /netflix/i.test(`${from} ${subject} ${snippet}`),\n  },\n}];"
+      },
+      "id": "6799ce41-6f0d-4785-b16a-5e6a2f78c5cb",
+      "name": "Extract Netflix Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+        "method": "GET",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{'from:(netflix.com OR mail.netflix.com OR account.netflix.com OR info@account.netflix.com OR no-reply@mailer.netflix.com) before:' + $now.setZone('Asia/Jakarta').startOf('day').toFormat('yyyy/MM/dd') + ' in:anywhere -in:spam -in:trash'}}"
+            },
+            {
+              "name": "maxResults",
+              "value": "500"
+            },
+            {
+              "name": "includeSpamTrash",
+              "value": "false"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "responseFormat": "json"
+          }
+        }
+      },
+      "id": "3e55ba3d-a014-4966-b533-415f9dfcf20c",
+      "name": "List Old Netflix Emails",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        240,
+        -240
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "6MbJjiAjqhbTBKbY",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $input.first()?.json ?? {};\nconst messages = Array.isArray(resp.messages) ? resp.messages : [];\nconst ids = messages.map((m) => m.id).filter(Boolean);\nif (!ids.length) return [];\nreturn [{ json: { ids, count: ids.length } }];"
+      },
+      "id": "c6676171-12f6-402f-b645-7552130a1fa0",
+      "name": "Prepare Old Netflix IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "gmailOAuth2",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/batchModify",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": {
+          "ids": "={{$json.ids}}",
+          "removeLabelIds": [
+            "UNREAD"
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "responseFormat": "json"
+          }
+        }
+      },
+      "id": "81e1cfd8-4317-4580-86b9-0f5454ba090d",
+      "name": "Batch Mark Old Netflix as Read",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        720,
+        -240
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "6MbJjiAjqhbTBKbY",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "List Old Netflix Emails",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "List Today's Netflix Unread",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Gmail Messages": {
+      "main": [
+        [
+          {
+            "node": "Get Gmail Message Detail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Gmail Message Detail": {
+      "main": [
+        [
+          {
+            "node": "Extract Netflix Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Old Netflix Emails": {
+      "main": [
+        [
+          {
+            "node": "Prepare Old Netflix IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Old Netflix IDs": {
+      "main": [
+        [
+          {
+            "node": "Batch Mark Old Netflix as Read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Today's Netflix Unread": {
+      "main": [
+        [
+          {
+            "node": "Split Gmail Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true,
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "nodeGroups": [],
+  "pinData": {},
+  "versionId": "92644e86-fe92-4b10-ac0d-4521b0d228b4",
+  "activeVersionId": null,
+  "versionCounter": 7,
+  "triggerCount": 0,
+  "sourceWorkflowId": null,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-06-27T17:23:03.871Z",
+      "createdAt": "2026-06-27T17:23:03.871Z",
+      "role": "workflow:owner",
+      "workflowId": "8f5b28d2-8e6a-4e5b-a2a0-6d1c2c0b7b11",
+      "projectId": "co6TdqZcqx9mDAhN",
+      "project": {
+        "updatedAt": "2026-06-22T16:05:35.285Z",
+        "createdAt": "2026-06-22T16:01:20.867Z",
+        "id": "co6TdqZcqx9mDAhN",
+        "name": "Jovan Tama <jovangithub@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "customTelemetryTags": [],
+        "creatorId": "f82a16bc-551f-410d-aeef-5928aafdd5eb"
+      }
+    }
+  ],
+  "versionMetadata": null
+}
