@@ -72,7 +72,7 @@ export default function AddOrderDialog({ onSaved, initial, extend, open: control
   }, [open, extend, initial])
 
   const availableProfiles = accounts.find(a => a.id === accountId)?.profiles.filter(p => p.is_rentable) ?? []
-  const finalPrice = pkg ? Number(price) || PACKAGES[pkg as PackageType].price : 0
+  const finalPrice = pkg ? (price === '' ? PACKAGES[pkg as PackageType].price : Number(price)) : 0
 
   function reset() {
     setAccountId(''); setProfileId(''); setCustomerName(''); setPkg(''); setPrice(''); setNotes('')

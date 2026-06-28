@@ -451,7 +451,7 @@ function EditOrderDialog({ order, onSaved }: { order: OrderWithProfile; onSaved:
     setBusy(true)
     const { error } = await supabase.from('orders').update({
       customer_name: customerName.trim(),
-      price: Number(price) || order.price,
+      price: price === '' ? order.price : Number(price),
       logout_time: logoutTime,
       notes: notes || null,
     }).eq('id', order.id)
