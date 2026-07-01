@@ -37,7 +37,7 @@ returns table (
   runid bigint,
   status text,
   return_message text,
-  start_time timestamptz,
+  start_time timestamptz, 
   end_time timestamptz
 )
 language sql

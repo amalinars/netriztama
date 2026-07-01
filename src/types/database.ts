@@ -18,7 +18,7 @@ export type Profile = {
 }
 
 export type ProfileWithAccount = Profile & {
-  accounts: Pick<Account, 'id' | 'name'>
+  accounts: Pick<Account, 'id' | 'name'> & { password?: string | null }
 }
 
 export type Order = {

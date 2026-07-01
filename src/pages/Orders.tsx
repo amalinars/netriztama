@@ -36,7 +36,7 @@ export default function Orders() {
 
   async function fetchOrders() {
     const [{ data: ordData }, { data: accData }] = await Promise.all([
-      supabase.from('orders').select('*, profiles(*, accounts(id, name))').order('created_at', { ascending: false }),
+      supabase.from('orders').select('*, profiles(*, accounts(id, name, password))').order('created_at', { ascending: false }),
       supabase.from('accounts').select('*, profiles(*)').order('created_at'),
     ])
     setOrders(ordData ?? [])
@@ -238,7 +238,7 @@ export default function Orders() {
                     <TableCell className="text-muted-foreground text-sm">{i + 1}</TableCell>
                     <TableCell className="font-medium">{p.name}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{p.account.name.split('@')[0]}</TableCell>
-                    <TableCell><ProfilePinStatus profile={p} onChanged={fetchOrders} compact /></TableCell>
+                    <TableCell><ProfilePinStatus profile={p} account={p.account} onChanged={fetchOrders} compact /></TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-0.5">
                         <EditProfileDialog profile={p} onSaved={fetchOrders} size="icon-xs" />
@@ -279,7 +279,7 @@ export default function Orders() {
                   <TableCell>
                     <div className="flex items-center gap-1.5">
                       <span className="font-medium">{o.profiles.name}</span>
-                      <ProfilePinStatus profile={o.profiles} onChanged={fetchOrders} compact />
+                      <ProfilePinStatus profile={o.profiles} account={o.profiles.accounts} onChanged={fetchOrders} compact />
                     </div>
                     <div className="text-sm text-muted-foreground">{o.profiles.accounts.name.split('@')[0]}</div>
                   </TableCell>
@@ -352,7 +352,7 @@ function AvailableProfileCard({ profile, onChanged, onRent }: { profile: Profile
           </div>
           <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">Tersedia</Badge>
         </div>
-        <ProfilePinStatus profile={profile} onChanged={onChanged} />
+        <ProfilePinStatus profile={profile} account={profile.account} onChanged={onChanged} />
         <div className="flex justify-end gap-1 border-t pt-2">
           <EditProfileDialog profile={profile} onSaved={onChanged} size="icon-xs" />
           <Button size="sm" onClick={onRent}>Sewakan</Button>
@@ -381,7 +381,7 @@ function OrderCard({ order, today, onExtend, onMarkDone, onDelete, onEdited }: {
           <StatusBadge status={order.status} endDate={order.end_date} today={today} />
         </div>
 
-        <ProfilePinStatus profile={order.profiles} onChanged={onEdited} />
+        <ProfilePinStatus profile={order.profiles} account={order.profiles.accounts} onChanged={onEdited} />
 
         <div className="grid grid-cols-2 gap-2 text-sm">
           <div className="flex items-center gap-1.5 text-muted-foreground">

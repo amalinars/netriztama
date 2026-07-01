@@ -125,7 +125,7 @@ function AccountCard({ account, onChanged }: { account: AccountWithProfiles; onC
         </div>
         <div className="space-y-2">
           {account.profiles.map(p => (
-            <ProfileRow key={p.id} profile={p} onChanged={onChanged} />
+            <ProfileRow key={p.id} profile={p} account={account} onChanged={onChanged} />
           ))}
         </div>
       </CardContent>
@@ -133,7 +133,7 @@ function AccountCard({ account, onChanged }: { account: AccountWithProfiles; onC
   )
 }
 
-function ProfileRow({ profile, onChanged }: { profile: Profile; onChanged: () => void }) {
+function ProfileRow({ profile, account, onChanged }: { profile: Profile; account: Account; onChanged: () => void }) {
   async function deleteProfile() {
     const { error } = await supabase.from('profiles').delete().eq('id', profile.id)
     if (error) { toast.error(error.message); return }
@@ -145,7 +145,7 @@ function ProfileRow({ profile, onChanged }: { profile: Profile; onChanged: () =>
     <div className="flex items-center justify-between rounded-xl bg-muted/50 px-4 py-3">
       <div className="flex items-center gap-2.5 min-w-0">
         <span className="text-base">{profile.name}</span>
-        <ProfilePinStatus profile={profile} onChanged={onChanged} />
+        <ProfilePinStatus profile={profile} account={account} onChanged={onChanged} />
         <Badge variant={profile.is_rentable ? 'default' : 'secondary'} className="text-xs">
           {profile.is_rentable ? 'Disewakan' : 'Utama'}
         </Badge>
