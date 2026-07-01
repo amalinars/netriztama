@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { supabase, autoCompleteOrders, completeOrder } from '@/lib/supabase'
-import { PACKAGES, formatRupiah } from '@/lib/constants'
+import { PACKAGES, formatRupiah, calculateEndDate } from '@/lib/constants'
 import type { Account, Profile, OrderWithProfile, Order } from '@/types/database'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -10,13 +10,19 @@ import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import AddOrderDialog from '@/components/AddOrderDialog'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import LogoutTimeField from '@/components/LogoutTimeField'
 import ProfilePinStatus from '@/components/ProfilePinStatus'
 import EditProfileDialog from '@/components/EditProfileDialog'
-import { Search, CheckCircle2, AlertTriangle, List, LayoutGrid, Calendar, Tag, RefreshCw, Pencil, Trash2, KeyRound } from 'lucide-react'
+import { Search, CheckCircle2, AlertTriangle, List, LayoutGrid, Calendar, Tag, RefreshCw, Pencil, Trash2, KeyRound, Clock, Copy } from 'lucide-react'
+
+async function copyText(text: string, label = 'Disalin') {
+  try { await navigator.clipboard.writeText(text); toast.success(label) }
+  catch { toast.error('Gagal menyalin') }
+}
 
 type ViewMode = 'list' | 'card'
 type AccountWithProfiles = Account & { profiles: Profile[] }
@@ -237,12 +243,16 @@ export default function Orders() {
                   <TableRow key={p.id}>
                     <TableCell className="text-muted-foreground text-sm">{i + 1}</TableCell>
                     <TableCell className="font-medium">{p.name}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{p.account.name.split('@')[0]}</TableCell>
+                    <TableCell>
+                      <div className="text-sm">{p.account.name}</div>
+                      {p.account.password && <div className="text-xs text-muted-foreground font-mono">{p.account.password}</div>}
+                    </TableCell>
                     <TableCell><ProfilePinStatus profile={p} account={p.account} onChanged={fetchOrders} compact /></TableCell>
                     <TableCell>
-                      <div className="flex justify-end gap-0.5">
+                      <div className="flex justify-end items-center gap-1.5">
+                        {p.pin_changed_at && <CooldownBadge pinChangedAt={p.pin_changed_at} onExpired={fetchOrders} />}
                         <EditProfileDialog profile={p} onSaved={fetchOrders} size="icon-xs" />
-                        <Button size="sm" onClick={() => setRenting({ accountId: p.account.id, profileId: p.id })}>Sewakan</Button>
+                        <Button size="sm" onClick={() => setRenting({ accountId: p.account.id, profileId: p.id })} disabled={isInCooldown(p.pin_changed_at)}>Sewakan</Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -341,21 +351,70 @@ function BoardColumn({ title, count, empty, children }: { title: string; count: 
   )
 }
 
-function AvailableProfileCard({ profile, onChanged, onRent }: { profile: Profile & { account: AccountWithProfiles }; onChanged: () => void; onRent: () => void }) {
+function isInCooldown(pinChangedAt: string | null): boolean {
+  if (!pinChangedAt) return false
+  return Date.now() - new Date(pinChangedAt).getTime() < 30 * 60 * 1000
+}
+
+function CooldownBadge({ pinChangedAt, onExpired }: { pinChangedAt: string; onExpired: () => void }) {
+  const [secs, setSecs] = useState(() => {
+    const elapsed = (Date.now() - new Date(pinChangedAt).getTime()) / 1000
+    return Math.max(0, Math.round(30 * 60 - elapsed))
+  })
+
+  useEffect(() => {
+    if (secs <= 0) return
+    const id = setInterval(() => {
+      setSecs(prev => {
+        if (prev <= 1) { clearInterval(id); onExpired(); return 0 }
+        return prev - 1
+      })
+    }, 1000)
+    return () => clearInterval(id)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (secs <= 0) return null
+  const m = Math.floor(secs / 60)
+  const s = secs % 60
   return (
-    <Card className="border-emerald-500/20 bg-emerald-500/8 dark:bg-emerald-500/10">
+    <Badge variant="secondary" className="gap-1 bg-amber-500/10 text-amber-700 dark:text-amber-300 font-mono tabular-nums shrink-0">
+      <Clock className="size-3" />{m}:{String(s).padStart(2, '0')}
+    </Badge>
+  )
+}
+
+function AvailableProfileCard({ profile, onChanged, onRent }: { profile: Profile & { account: AccountWithProfiles }; onChanged: () => void; onRent: () => void }) {
+  const cooldown = isInCooldown(profile.pin_changed_at)
+  return (
+    <Card className={cooldown ? 'border-amber-500/20 bg-amber-500/8 dark:bg-amber-500/10' : 'border-emerald-500/20 bg-emerald-500/8 dark:bg-emerald-500/10'}>
       <CardContent className="p-4 space-y-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="font-semibold truncate">{profile.name}</p>
-            <p className="text-sm text-muted-foreground truncate">{profile.account.name.split('@')[0]}</p>
           </div>
-          <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">Tersedia</Badge>
+          {cooldown && profile.pin_changed_at
+            ? <CooldownBadge pinChangedAt={profile.pin_changed_at} onExpired={onChanged} />
+            : <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">Tersedia</Badge>
+          }
         </div>
+
+        <div className="space-y-1 rounded-lg bg-muted/50 px-3 py-2 text-xs">
+          <div className="flex items-center gap-1.5">
+            <span className="flex-1 truncate text-muted-foreground">{profile.account.name}</span>
+            <Button variant="ghost" size="icon-xs" onClick={() => copyText(profile.account.name, 'Email disalin')}><Copy className="size-3" /></Button>
+          </div>
+          {profile.account.password && (
+            <div className="flex items-center gap-1.5">
+              <span className="flex-1 truncate font-mono text-muted-foreground">{profile.account.password}</span>
+              <Button variant="ghost" size="icon-xs" onClick={() => copyText(profile.account.password!, 'Password disalin')}><Copy className="size-3" /></Button>
+            </div>
+          )}
+        </div>
+
         <ProfilePinStatus profile={profile} account={profile.account} onChanged={onChanged} />
         <div className="flex justify-end gap-1 border-t pt-2">
           <EditProfileDialog profile={profile} onSaved={onChanged} size="icon-xs" />
-          <Button size="sm" onClick={onRent}>Sewakan</Button>
+          <Button size="sm" onClick={onRent} disabled={cooldown}>Sewakan</Button>
         </div>
       </CardContent>
     </Card>
@@ -451,7 +510,9 @@ function OrderActions({
 function EditOrderDialog({ order, onSaved }: { order: OrderWithProfile; onSaved: () => void }) {
   const [open, setOpen] = useState(false)
   const [customerName, setCustomerName] = useState(order.customer_name)
+  const [pkg, setPkg] = useState(order.package)
   const [price, setPrice] = useState(String(order.price))
+  const [endDate, setEndDate] = useState(order.end_date)
   const [logoutTime, setLogoutTime] = useState(order.logout_time?.slice(0, 5) ?? '23:59')
   const [notes, setNotes] = useState(order.notes ?? '')
   const [busy, setBusy] = useState(false)
@@ -459,11 +520,20 @@ function EditOrderDialog({ order, onSaved }: { order: OrderWithProfile; onSaved:
   useEffect(() => {
     if (open) {
       setCustomerName(order.customer_name)
+      setPkg(order.package)
       setPrice(String(order.price))
+      setEndDate(order.end_date)
       setLogoutTime(order.logout_time?.slice(0, 5) ?? '23:59')
       setNotes(order.notes ?? '')
     }
   }, [open, order])
+
+  function handlePackageChange(v: string | null) {
+    const next = (v ?? order.package) as typeof order.package
+    setPkg(next)
+    setPrice(String(PACKAGES[next].price))
+    setEndDate(calculateEndDate(order.start_date, next))
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -471,7 +541,9 @@ function EditOrderDialog({ order, onSaved }: { order: OrderWithProfile; onSaved:
     setBusy(true)
     const { error } = await supabase.from('orders').update({
       customer_name: customerName.trim(),
-      price: price === '' ? order.price : Number(price),
+      package: pkg,
+      price: price === '' ? PACKAGES[pkg].price : Number(price),
+      end_date: endDate,
       logout_time: logoutTime,
       notes: notes || null,
     }).eq('id', order.id)
@@ -495,15 +567,40 @@ function EditOrderDialog({ order, onSaved }: { order: OrderWithProfile; onSaved:
             <Input value={customerName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCustomerName(e.target.value)} required />
           </div>
           <div className="space-y-2">
+            <Label>Paket Sewa</Label>
+            <Select value={pkg} onValueChange={handlePackageChange}>
+              <SelectTrigger>
+                <SelectValue>
+                  {(v: string | null) => { const p = v ? PACKAGES[v as typeof pkg] : null; return p ? `${p.label} — ${formatRupiah(p.price)}` : 'Pilih paket' }}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(PACKAGES).map(([k, v]) => (
+                  <SelectItem key={k} value={k}>{v.label} — {formatRupiah(v.price)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Tanggal Mulai</Label>
+              <Input type="date" value={order.start_date} disabled className="opacity-60" />
+            </div>
+            <div className="space-y-2">
+              <Label>Tanggal Beres</Label>
+              <Input type="date" value={endDate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEndDate(e.target.value)} required />
+            </div>
+          </div>
+          <div className="space-y-2">
             <Label>Harga</Label>
-            <Input type="number" value={price} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPrice(e.target.value)} required />
+            <Input type="number" value={price} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPrice(e.target.value)} placeholder={String(PACKAGES[pkg].price)} required />
+            <p className="text-xs text-muted-foreground">Default paket: {formatRupiah(PACKAGES[pkg].price)}</p>
           </div>
           <LogoutTimeField value={logoutTime} onChange={setLogoutTime} />
           <div className="space-y-2">
             <Label>Catatan</Label>
             <Textarea value={notes} onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(e.target.value)} rows={2} />
           </div>
-          <p className="text-xs text-muted-foreground">Paket/tanggal/profil tidak bisa diubah. Hapus dan buat order baru kalau perlu.</p>
           <DialogFooter>
             <DialogClose render={<Button variant="outline" />}>Batal</DialogClose>
             <Button type="submit" disabled={busy}>Simpan</Button>

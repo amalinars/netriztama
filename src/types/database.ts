@@ -13,6 +13,7 @@ export type Profile = {
   pin: string | null
   old_pin: string | null
   pin_change_pending: boolean
+  pin_changed_at: string | null
   is_rentable: boolean
   created_at: string
 }

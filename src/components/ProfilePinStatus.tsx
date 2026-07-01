@@ -62,7 +62,7 @@ export default function ProfilePinStatus({ profile, account, onChanged, compact 
   }
 
   async function confirmChanged() {
-    const { error } = await supabase.from('profiles').update({ old_pin: null, pin_change_pending: false } as never).eq('id', profile.id)
+    const { error } = await supabase.from('profiles').update({ old_pin: null, pin_change_pending: false, pin_changed_at: new Date().toISOString() } as never).eq('id', profile.id)
     if (error) { toast.error(error.message); return }
     toast.success('PIN Netflix sudah valid')
     onChanged?.()
