@@ -39,6 +39,21 @@ export default function Orders() {
   const [loading, setLoading] = useState(true)
   const [extending, setExtending] = useState<Order | null>(null)
   const [renting, setRenting] = useState<{ accountId: string; profileId: string } | null>(null)
+  const [now, setNow] = useState(Date.now())
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  function getAccountCooldown(accountId: string): number {
+    const accountOrders = orders.filter(o => o.profiles.account_id === accountId)
+    if (accountOrders.length === 0) return 0
+    const latestOrderTime = Math.max(...accountOrders.map(o => new Date(o.created_at).getTime()))
+    const elapsed = now - latestOrderTime
+    const cooldownDuration = 30 * 60 * 1000 // 30 minutes
+    return Math.max(0, cooldownDuration - elapsed)
+  }
 
   async function fetchOrders() {
     const [{ data: ordData }, { data: accData }] = await Promise.all([
@@ -114,6 +129,12 @@ export default function Orders() {
 
   const pendingPins = accounts.flatMap(a => a.profiles.filter(p => p.pin_change_pending).map(p => ({ ...p, accountName: a.name })))
 
+  const cooldownAccounts = accounts.map(acc => {
+    const remainingMs = getAccountCooldown(acc.id)
+    if (remainingMs <= 0) return null
+    return { account: acc, remainingMs }
+  }).filter((item): item is NonNullable<typeof item> => item !== null)
+
   if (loading) return <div className="flex items-center justify-center py-20 text-muted-foreground">Memuat...</div>
 
   return (
@@ -132,6 +153,31 @@ export default function Orders() {
                 <span className="tabular-nums"> ({p.old_pin} → {p.pin})</span>
               </li>
             ))}
+          </ul>
+        </div>
+      )}
+
+      {cooldownAccounts.length > 0 && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <Clock className="size-4 text-amber-500 shrink-0 animate-pulse" />
+            <span className="text-sm font-semibold">{cooldownAccounts.length} akun dalam jeda cooldown 30 menit</span>
+          </div>
+          <ul className="ml-6 text-sm text-muted-foreground space-y-1">
+            {cooldownAccounts.map(({ account, remainingMs }) => {
+              const totalSecs = Math.ceil(remainingMs / 1000)
+              const m = Math.floor(totalSecs / 60)
+              const s = totalSecs % 60
+              return (
+                <li key={account.id} className="flex items-center gap-2">
+                  <span className="text-foreground font-medium">{account.name.split('@')[0]}</span>
+                  <span>— jeda sewa kembali:</span>
+                  <Badge variant="secondary" className="bg-amber-500/15 text-amber-700 dark:text-amber-300 font-mono tabular-nums">
+                    {m}:{String(s).padStart(2, '0')}
+                  </Badge>
+                </li>
+              )
+            })}
           </ul>
         </div>
       )}
@@ -188,7 +234,13 @@ export default function Orders() {
           {cardSections.available && (
             <BoardColumn title="Tersedia" count={visibleAvailable.length} empty="Tidak ada profil tersedia.">
               {visibleAvailable.map(p => (
-                <AvailableProfileCard key={p.id} profile={p} onChanged={fetchOrders} onRent={() => setRenting({ accountId: p.account.id, profileId: p.id })} />
+                <AvailableProfileCard
+                  key={p.id}
+                  profile={p}
+                  onChanged={fetchOrders}
+                  onRent={() => setRenting({ accountId: p.account.id, profileId: p.id })}
+                  isRentDisabled={getAccountCooldown(p.account.id) > 0}
+                />
               ))}
             </BoardColumn>
           )}
@@ -252,7 +304,7 @@ export default function Orders() {
                       <div className="flex justify-end items-center gap-1.5">
                         {p.pin_changed_at && <CooldownBadge pinChangedAt={p.pin_changed_at} onExpired={fetchOrders} />}
                         <EditProfileDialog profile={p} onSaved={fetchOrders} size="icon-xs" />
-                        <Button size="sm" onClick={() => setRenting({ accountId: p.account.id, profileId: p.id })} disabled={isInCooldown(p.pin_changed_at)}>Sewakan</Button>
+                        <Button size="sm" onClick={() => setRenting({ accountId: p.account.id, profileId: p.id })} disabled={isInCooldown(p.pin_changed_at) || getAccountCooldown(p.account.id) > 0}>Sewakan</Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -383,7 +435,12 @@ function CooldownBadge({ pinChangedAt, onExpired }: { pinChangedAt: string; onEx
   )
 }
 
-function AvailableProfileCard({ profile, onChanged, onRent }: { profile: Profile & { account: AccountWithProfiles }; onChanged: () => void; onRent: () => void }) {
+function AvailableProfileCard({ profile, onChanged, onRent, isRentDisabled }: {
+  profile: Profile & { account: AccountWithProfiles }
+  onChanged: () => void
+  onRent: () => void
+  isRentDisabled?: boolean
+}) {
   const cooldown = isInCooldown(profile.pin_changed_at)
   return (
     <Card className={cooldown ? 'border-amber-500/20 bg-amber-500/8 dark:bg-amber-500/10' : 'border-emerald-500/20 bg-emerald-500/8 dark:bg-emerald-500/10'}>
@@ -414,7 +471,7 @@ function AvailableProfileCard({ profile, onChanged, onRent }: { profile: Profile
         <ProfilePinStatus profile={profile} account={profile.account} onChanged={onChanged} />
         <div className="flex justify-end gap-1 border-t pt-2">
           <EditProfileDialog profile={profile} onSaved={onChanged} size="icon-xs" />
-          <Button size="sm" onClick={onRent} disabled={cooldown}>Sewakan</Button>
+          <Button size="sm" onClick={onRent} disabled={cooldown || isRentDisabled}>Sewakan</Button>
         </div>
       </CardContent>
     </Card>
