@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Copy, CheckCircle2, Pencil, RefreshCw, Zap, XCircle, ChevronRight } from 'lucide-react'
+import { Copy, CheckCircle2, Pencil, RefreshCw, Zap, XCircle, ChevronRight, Camera } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Profile } from '@/types/database'
 import { Badge } from '@/components/ui/badge'
@@ -34,6 +34,17 @@ export default function ProfilePinStatus({ profile, account, onChanged, compact 
   const [logError, setLogError] = useState('')
   const logEndRef = useRef<HTMLDivElement>(null)
 
+  const [snapshotOpen, setSnapshotOpen] = useState(false)
+  const [snapshotUrl, setSnapshotUrl] = useState('')
+  const [snapshotError, setSnapshotError] = useState(false)
+
+  function openSnapshot() {
+    const apiUrl = import.meta.env.VITE_AUTOMATION_API_URL || 'http://localhost:4000'
+    setSnapshotUrl(`${apiUrl}/snapshots/${profile.id}.png?t=${Date.now()}`)
+    setSnapshotError(false)
+    setSnapshotOpen(true)
+  }
+
   useEffect(() => setDraft(profile.pin ?? ''), [profile.pin])
 
   useEffect(() => {
@@ -63,7 +74,10 @@ export default function ProfilePinStatus({ profile, account, onChanged, compact 
 
   async function confirmChanged() {
     const { error } = await supabase.from('profiles').update({ old_pin: null, pin_change_pending: false, pin_changed_at: new Date().toISOString() } as never).eq('id', profile.id)
-    if (error) { toast.error(error.message); return }
+    if (error) {
+      toast.error(error.message)
+      throw new Error(error.message)
+    }
     toast.success('PIN Netflix sudah valid')
     onChanged?.()
   }
@@ -120,13 +134,23 @@ export default function ProfilePinStatus({ profile, account, onChanged, compact 
           } else if (line.startsWith('__DONE__:')) {
             const payload = line.slice(9)
             if (payload === 'ok') {
+              // Ensure all previous steps are marked as done
+              setSteps(prev => prev.map(s => s.status === 'running' ? { ...s, status: 'done' } : s))
               upsertStep('Update database', 'running')
-              setLogStatus('ok')
-              await confirmChanged()
-              upsertStep('Update database', 'done')
+              try {
+                await confirmChanged()
+                upsertStep('Update database', 'done')
+                setLogStatus('ok')
+              } catch (err: any) {
+                upsertStep('Update database', 'error')
+                setLogStatus('error')
+                setLogError(err.message || 'Gagal mengupdate database')
+              }
             } else {
               setLogStatus('error')
               setLogError(payload.replace(/^error:/, ''))
+              // Mark all running steps as error
+              setSteps(prev => prev.map(s => s.status === 'running' ? { ...s, status: 'error' } : s))
             }
           } else if (line.trim()) {
             setLogLines(prev => [...prev, line])
@@ -139,6 +163,7 @@ export default function ProfilePinStatus({ profile, account, onChanged, compact 
     } catch {
       setLogStatus('error')
       setLogError('Server otomasi tidak dapat dijangkau. Pastikan npm run server sudah berjalan.')
+      setSteps(prev => prev.map(s => s.status === 'running' ? { ...s, status: 'error' } : s))
     } finally {
       setAutomating(false)
     }
@@ -226,6 +251,35 @@ export default function ProfilePinStatus({ profile, account, onChanged, compact 
         </DialogContent>
       </Dialog>
 
+      <Dialog open={snapshotOpen} onOpenChange={setSnapshotOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Snapshot Netflix — {profile.name}</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center justify-center min-h-[300px] border rounded-lg bg-zinc-950 p-2 overflow-hidden">
+            {snapshotError ? (
+              <div className="text-center p-6 flex flex-col items-center justify-center">
+                <Camera className="size-10 text-muted-foreground mb-3" />
+                <p className="text-sm font-medium text-muted-foreground">Belum ada snapshot untuk profil ini.</p>
+                <p className="text-xs text-muted-foreground/60 mt-1 max-w-sm">
+                  Snapshot akan dibuat secara otomatis saat berhasil mengubah PIN lewat Ganti Otomatis.
+                </p>
+              </div>
+            ) : (
+              <img
+                src={snapshotUrl}
+                alt={`Snapshot PIN ${profile.name}`}
+                className="max-h-[60vh] object-contain rounded"
+                onError={() => setSnapshotError(true)}
+              />
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSnapshotOpen(false)}>Tutup</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {!profile.pin && (
         <span className="text-sm text-amber-600 dark:text-amber-400">PIN: belum di-set</span>
       )}
@@ -250,13 +304,15 @@ export default function ProfilePinStatus({ profile, account, onChanged, compact 
               {automating ? <><RefreshCw className="size-3 animate-spin" /> Mengganti...</> : <><Zap className="size-3" /> Ganti Otomatis</>}
             </Button>
           )}
+          <Button variant="outline" size="sm" onClick={openSnapshot} className="h-7 gap-1 text-xs"><Camera className="size-3" /> Snapshot</Button>
         </div>
       )}
 
       {profile.pin && !profile.pin_change_pending && (
-        <div className="flex items-center gap-0.5">
+        <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground tabular-nums">PIN: {profile.pin}</span>
           <Button variant="ghost" size="icon-xs" onClick={() => copyText(profile.pin!)} title="Copy PIN"><Copy className="size-3" /></Button>
+          <Button variant="outline" size="sm" onClick={openSnapshot} className="h-7 gap-1 text-xs"><Camera className="size-3" /> Snapshot</Button>
         </div>
       )}
     </>
