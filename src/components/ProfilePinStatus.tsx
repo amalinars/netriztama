@@ -65,7 +65,16 @@ export default function ProfilePinStatus({ profile, account, onChanged, compact 
 
   async function savePendingPin() {
     if (!/^\d{4}$/.test(draft)) return
-    const { error } = await supabase.from('profiles').update({ pin: draft } as never).eq('id', profile.id)
+    const newPin = draft.trim()
+    const currentNetflixPin = profile.pin_change_pending ? profile.old_pin : profile.pin
+    const isDifferentFromNetflix = newPin !== (currentNetflixPin ?? '')
+
+    const { error } = await supabase.from('profiles').update({
+      pin: newPin,
+      old_pin: isDifferentFromNetflix ? currentNetflixPin : null,
+      pin_change_pending: isDifferentFromNetflix,
+    } as never).eq('id', profile.id)
+
     if (error) { toast.error(error.message); return }
     toast.success('PIN baru diupdate')
     setEditing(false)
@@ -190,12 +199,12 @@ export default function ProfilePinStatus({ profile, account, onChanged, compact 
             ) : steps.map(step => (
               <div key={step.label} className="flex items-center gap-3 text-sm">
                 {step.status === 'running' && <RefreshCw className="size-4 animate-spin text-primary shrink-0" />}
-                {step.status === 'done'    && <CheckCircle2 className="size-4 text-green-500 shrink-0" />}
-                {step.status === 'error'   && <XCircle className="size-4 text-destructive shrink-0" />}
+                {step.status === 'done' && <CheckCircle2 className="size-4 text-green-500 shrink-0" />}
+                {step.status === 'error' && <XCircle className="size-4 text-destructive shrink-0" />}
                 <span className={
-                  step.status === 'done'    ? 'text-muted-foreground' :
-                  step.status === 'running' ? 'font-medium' :
-                  'text-destructive'
+                  step.status === 'done' ? 'text-muted-foreground' :
+                    step.status === 'running' ? 'font-medium' :
+                      'text-destructive'
                 }>
                   {step.label}
                 </span>
@@ -227,15 +236,15 @@ export default function ProfilePinStatus({ profile, account, onChanged, compact 
           <div className="flex items-center gap-2 text-sm min-h-5">
             {logStatus === 'running' && (
               <><RefreshCw className="size-4 animate-spin text-primary shrink-0" />
-              <span className="text-muted-foreground">Sedang berjalan...</span></>
+                <span className="text-muted-foreground">Sedang berjalan...</span></>
             )}
             {logStatus === 'ok' && (
               <><CheckCircle2 className="size-4 text-green-500 shrink-0" />
-              <span className="text-green-600 dark:text-green-400 font-medium">PIN berhasil diganti!</span></>
+                <span className="text-green-600 dark:text-green-400 font-medium">PIN berhasil diganti!</span></>
             )}
             {logStatus === 'error' && steps.length === 0 && (
               <><XCircle className="size-4 text-destructive shrink-0" />
-              <span className="text-destructive text-xs break-all">{logError}</span></>
+                <span className="text-destructive text-xs break-all">{logError}</span></>
             )}
           </div>
 

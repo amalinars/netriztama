@@ -21,22 +21,28 @@ export default function EditProfileDialog({ profile, onSaved, size = 'icon-sm' }
       setPin(profile.pin ?? '')
       setIsRentable(profile.is_rentable)
     }
-  }, [open, profile])
+  }, [open])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim() || !pin.trim()) return
     setBusy(true)
-    const pinChanged = pin.trim() !== (profile.pin ?? '')
+    
+    const newPin = pin.trim()
+    const currentNetflixPin = profile.pin_change_pending ? profile.old_pin : profile.pin
+    const isDifferentFromNetflix = newPin !== (currentNetflixPin ?? '')
+
     const { error } = await supabase.from('profiles').update({
       name: name.trim(),
-      pin: pin.trim(),
+      pin: newPin,
       is_rentable: isRentable,
-      ...(pinChanged ? { old_pin: profile.pin, pin_change_pending: true } : {}),
+      old_pin: isDifferentFromNetflix ? currentNetflixPin : null,
+      pin_change_pending: isDifferentFromNetflix,
     } as never).eq('id', profile.id)
+
     setBusy(false)
     if (error) { toast.error(error.message); return }
-    toast.success(pinChanged ? 'Profil diupdate, PIN perlu diganti di Netflix' : 'Profil diupdate')
+    toast.success(isDifferentFromNetflix ? 'Profil diupdate, PIN perlu diganti di Netflix' : 'Profil diupdate')
     setOpen(false)
     onSaved()
   }
