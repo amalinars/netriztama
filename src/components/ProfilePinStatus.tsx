@@ -37,10 +37,28 @@ export default function ProfilePinStatus({ profile, account, onChanged, compact 
   const [snapshotOpen, setSnapshotOpen] = useState(false)
   const [snapshotUrl, setSnapshotUrl] = useState('')
   const [snapshotError, setSnapshotError] = useState(false)
+  const [isErrorSnapshot, setIsErrorSnapshot] = useState(false)
+  const [hasErrorSnapshot, setHasErrorSnapshot] = useState(false)
 
-  function openSnapshot() {
+  async function checkErrorSnapshot() {
     const apiUrl = import.meta.env.VITE_AUTOMATION_API_URL || 'http://localhost:4000'
-    setSnapshotUrl(`${apiUrl}/snapshots/${profile.id}.png?t=${Date.now()}`)
+    try {
+      const res = await fetch(`${apiUrl}/snapshots/${profile.id}_error.png`, { method: 'HEAD' })
+      setHasErrorSnapshot(res.ok)
+    } catch {
+      setHasErrorSnapshot(false)
+    }
+  }
+
+  useEffect(() => {
+    checkErrorSnapshot()
+  }, [profile.id])
+
+  function openSnapshot(isError = false) {
+    const apiUrl = import.meta.env.VITE_AUTOMATION_API_URL || 'http://localhost:4000'
+    const name = isError ? `${profile.id}_error` : profile.id
+    setSnapshotUrl(`${apiUrl}/snapshots/${name}.png?t=${Date.now()}`)
+    setIsErrorSnapshot(isError)
     setSnapshotError(false)
     setSnapshotOpen(true)
   }
@@ -88,6 +106,7 @@ export default function ProfilePinStatus({ profile, account, onChanged, compact 
       throw new Error(error.message)
     }
     toast.success('PIN Netflix sudah valid')
+    setHasErrorSnapshot(false)
     onChanged?.()
   }
 
@@ -175,6 +194,7 @@ export default function ProfilePinStatus({ profile, account, onChanged, compact 
       setSteps(prev => prev.map(s => s.status === 'running' ? { ...s, status: 'error' } : s))
     } finally {
       setAutomating(false)
+      checkErrorSnapshot()
     }
   }
 
@@ -184,7 +204,7 @@ export default function ProfilePinStatus({ profile, account, onChanged, compact 
         open={logOpen}
         onOpenChange={(open: boolean) => { if (!open && logStatus !== 'running') setLogOpen(false) }}
       >
-        <DialogContent className="max-w-md" showCloseButton={false}>
+        <DialogContent className={logStatus === 'error' ? "max-w-xl" : "max-w-md"} showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>Ganti PIN — {profile.name}</DialogTitle>
           </DialogHeader>
@@ -248,6 +268,32 @@ export default function ProfilePinStatus({ profile, account, onChanged, compact 
             )}
           </div>
 
+          {logStatus === 'error' && (
+            <div className="mt-4 space-y-2">
+              <div className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                <Camera className="size-3.5" />
+                <span>Snapshot Error:</span>
+              </div>
+              <div className="border rounded bg-zinc-950 p-2 overflow-hidden flex justify-center items-center">
+                <img
+                  src={`${import.meta.env.VITE_AUTOMATION_API_URL || 'http://localhost:4000'}/snapshots/${profile.id}_error.png?t=${Date.now()}`}
+                  alt="Error Snapshot"
+                  className="max-h-72 w-full object-contain rounded"
+                  onError={(e) => {
+                    const imgEl = e.target as HTMLElement;
+                    imgEl.style.display = 'none';
+                    const parent = imgEl.parentElement;
+                    if (parent) {
+                      parent.style.display = 'none';
+                      const prevSibling = parent.previousElementSibling as HTMLElement;
+                      if (prevSibling) prevSibling.style.display = 'none';
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
           <DialogFooter>
             <Button
               variant="outline"
@@ -263,21 +309,25 @@ export default function ProfilePinStatus({ profile, account, onChanged, compact 
       <Dialog open={snapshotOpen} onOpenChange={setSnapshotOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Snapshot Netflix — {profile.name}</DialogTitle>
+            <DialogTitle>{isErrorSnapshot ? 'Snapshot Error Netflix' : 'Snapshot Netflix'} — {profile.name}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col items-center justify-center min-h-[300px] border rounded-lg bg-zinc-950 p-2 overflow-hidden">
             {snapshotError ? (
               <div className="text-center p-6 flex flex-col items-center justify-center">
                 <Camera className="size-10 text-muted-foreground mb-3" />
-                <p className="text-sm font-medium text-muted-foreground">Belum ada snapshot untuk profil ini.</p>
+                <p className="text-sm font-medium text-muted-foreground">
+                  {isErrorSnapshot ? 'Belum ada snapshot error untuk profil ini.' : 'Belum ada snapshot untuk profil ini.'}
+                </p>
                 <p className="text-xs text-muted-foreground/60 mt-1 max-w-sm">
-                  Snapshot akan dibuat secara otomatis saat berhasil mengubah PIN lewat Ganti Otomatis.
+                  {isErrorSnapshot
+                    ? 'Snapshot error dibuat secara otomatis jika terjadi kegagalan saat Ganti Otomatis.'
+                    : 'Snapshot akan dibuat secara otomatis saat berhasil mengubah PIN lewat Ganti Otomatis.'}
                 </p>
               </div>
             ) : (
               <img
                 src={snapshotUrl}
-                alt={`Snapshot PIN ${profile.name}`}
+                alt={isErrorSnapshot ? `Snapshot Error ${profile.name}` : `Snapshot PIN ${profile.name}`}
                 className="max-h-[60vh] object-contain rounded"
                 onError={() => setSnapshotError(true)}
               />
@@ -313,7 +363,10 @@ export default function ProfilePinStatus({ profile, account, onChanged, compact 
               {automating ? <><RefreshCw className="size-3 animate-spin" /> Mengganti...</> : <><Zap className="size-3" /> Ganti Otomatis</>}
             </Button>
           )}
-          <Button variant="outline" size="sm" onClick={openSnapshot} className="h-7 gap-1 text-xs"><Camera className="size-3" /> Snapshot</Button>
+          <Button variant="outline" size="sm" onClick={() => openSnapshot(false)} className="h-7 gap-1 text-xs"><Camera className="size-3" /> Snapshot</Button>
+          {hasErrorSnapshot && (
+            <Button variant="outline" size="sm" onClick={() => openSnapshot(true)} className="h-7 gap-1 text-xs border-destructive text-destructive hover:bg-destructive/10"><XCircle className="size-3" /> Snapshot Error</Button>
+          )}
         </div>
       )}
 
@@ -321,7 +374,10 @@ export default function ProfilePinStatus({ profile, account, onChanged, compact 
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground tabular-nums">PIN: {profile.pin}</span>
           <Button variant="ghost" size="icon-xs" onClick={() => copyText(profile.pin!)} title="Copy PIN"><Copy className="size-3" /></Button>
-          <Button variant="outline" size="sm" onClick={openSnapshot} className="h-7 gap-1 text-xs"><Camera className="size-3" /> Snapshot</Button>
+          <Button variant="outline" size="sm" onClick={() => openSnapshot(false)} className="h-7 gap-1 text-xs"><Camera className="size-3" /> Snapshot</Button>
+          {hasErrorSnapshot && (
+            <Button variant="outline" size="sm" onClick={() => openSnapshot(true)} className="h-7 gap-1 text-xs border-destructive text-destructive hover:bg-destructive/10"><XCircle className="size-3" /> Snapshot Error</Button>
+          )}
         </div>
       )}
     </>
