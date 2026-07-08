@@ -50,3 +50,44 @@ export type CronLog = {
   end_time: string
 }
 
+export type Testimonial = {
+  id: string
+  name: string | null
+  is_anonymous: boolean
+  quote: string
+  rating: number
+  sort_order: number
+  is_active: boolean
+  created_at: string
+}
+
+export type TestimonialGalleryItem = {
+  id: string
+  image_url: string
+  alt: string
+  sort_order: number
+  is_active: boolean
+  created_at: string
+}
+
+export type CreateTestimonialInput = {
+  name: string | null
+  is_anonymous: boolean
+  quote: string
+  rating: number
+}
+
+export type SaveTestimonialInput = {
+  name: string | null
+  is_anonymous: boolean
+  quote: string
+  rating: number
+  is_active: boolean
+}
+
+export type SaveTestimonialGalleryItemInput = {
+  image_url: string
+  alt: string
+  is_active: boolean
+}
+

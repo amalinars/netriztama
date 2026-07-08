@@ -1,0 +1,348 @@
+import { useEffect, useState, type FormEvent } from 'react'
+import { toast } from 'sonner'
+import { MessageSquareHeart, Plus, Pencil, Trash2, Eye, EyeOff, Image as ImageIcon } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import ConfirmDialog from '@/components/ConfirmDialog'
+import {
+  deleteTestimonial,
+  deleteTestimonialGalleryItem,
+  getAdminTestimonialGallery,
+  getAdminTestimonials,
+  saveTestimonial,
+  saveTestimonialGalleryItem,
+  toggleTestimonialActive,
+  toggleTestimonialGalleryActive,
+} from '@/lib/supabase'
+import type {
+  SaveTestimonialGalleryItemInput,
+  SaveTestimonialInput,
+  Testimonial,
+  TestimonialGalleryItem,
+} from '@/types/database'
+
+function clampRating(value: string) {
+  return Math.min(5, Math.max(1, Number(value) || 5))
+}
+
+export default function AdminTestimonials() {
+  const [testimonials, setTestimonials] = useState<Testimonial[]>([])
+  const [gallery, setGallery] = useState<TestimonialGalleryItem[]>([])
+  const [loading, setLoading] = useState(true)
+
+  async function loadTestimonials() {
+    const { data, error } = await getAdminTestimonials()
+    if (error) { toast.error(error.message); return }
+    setTestimonials(data ?? [])
+  }
+
+  async function loadGallery() {
+    const { data, error } = await getAdminTestimonialGallery()
+    if (error) { toast.error(error.message); return }
+    setGallery(data ?? [])
+  }
+
+  async function loadAll() {
+    setLoading(true)
+    await Promise.all([loadTestimonials(), loadGallery()])
+    setLoading(false)
+  }
+
+  useEffect(() => { loadAll() }, [])
+
+  if (loading) return <div className="flex items-center justify-center py-20 text-muted-foreground">Memuat...</div>
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Testimonials</h1>
+          <p className="text-muted-foreground">Kelola testimoni dan gallery transaksi yang tampil di halaman public.</p>
+        </div>
+      </div>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <MessageSquareHeart className="size-5 text-primary" /> Testimonials
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">{testimonials.length} testimoni</p>
+          </div>
+          <TestimonialDialog onSaved={loadTestimonials} />
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {testimonials.length === 0 ? (
+            <p className="rounded-xl border border-dashed py-8 text-center text-sm text-muted-foreground">Belum ada testimoni.</p>
+          ) : testimonials.map(item => (
+            <TestimonialRow key={item.id} item={item} onChanged={loadTestimonials} />
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <ImageIcon className="size-5 text-primary" /> Gallery transaksi
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">{gallery.length} gambar</p>
+          </div>
+          <GalleryDialog onSaved={loadGallery} />
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {gallery.length === 0 ? (
+            <p className="col-span-full rounded-xl border border-dashed py-8 text-center text-sm text-muted-foreground">Belum ada gambar.</p>
+          ) : gallery.map(item => (
+            <GalleryCard key={item.id} item={item} onChanged={loadGallery} />
+          ))}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function TestimonialRow({ item, onChanged }: { item: Testimonial; onChanged: () => void }) {
+  async function toggleActive() {
+    const { error } = await toggleTestimonialActive(item.id, !item.is_active)
+    if (error) { toast.error(error.message); return }
+    toast.success(item.is_active ? 'Testimoni disembunyikan' : 'Testimoni ditampilkan')
+    onChanged()
+  }
+
+  async function remove() {
+    const { error } = await deleteTestimonial(item.id)
+    if (error) { toast.error(error.message); return }
+    toast.success('Testimoni dihapus')
+    onChanged()
+  }
+
+  return (
+    <div className="rounded-2xl border bg-card p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold">{item.is_anonymous ? 'Anonymous' : item.name}</span>
+            <Badge variant={item.is_active ? 'default' : 'secondary'}>{item.is_active ? 'Aktif' : 'Nonaktif'}</Badge>
+            <span className="text-sm text-muted-foreground">⭐ {item.rating}/5</span>
+          </div>
+          <p className="line-clamp-2 text-sm text-muted-foreground">{item.quote}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button variant="ghost" size="icon-sm" onClick={toggleActive} title={item.is_active ? 'Sembunyikan' : 'Tampilkan'}>
+            {item.is_active ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+          </Button>
+          <TestimonialDialog item={item} onSaved={onChanged} />
+          <ConfirmDialog
+            title="Hapus testimoni?"
+            message="Testimoni ini akan dihapus permanen."
+            confirmLabel="Hapus"
+            destructive
+            onConfirm={remove}
+            trigger={<Button variant="ghost" size="icon-sm" title="Hapus" />}
+          >
+            <Trash2 className="size-4 text-destructive" />
+          </ConfirmDialog>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TestimonialDialog({ item, onSaved }: { item?: Testimonial; onSaved: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [anonymous, setAnonymous] = useState(item?.is_anonymous ?? true)
+  const [name, setName] = useState(item?.name ?? '')
+  const [rating, setRating] = useState(String(item?.rating ?? 5))
+  const [quote, setQuote] = useState(item?.quote ?? '')
+  const [active, setActive] = useState(item?.is_active ?? true)
+  const [busy, setBusy] = useState(false)
+
+  function reset() {
+    setAnonymous(item?.is_anonymous ?? true)
+    setName(item?.name ?? '')
+    setRating(String(item?.rating ?? 5))
+    setQuote(item?.quote ?? '')
+    setActive(item?.is_active ?? true)
+  }
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    if (!anonymous && !name.trim()) { toast.error('Nama wajib diisi kalau bukan Anonymous'); return }
+    if (quote.trim().length < 10) { toast.error('Quote minimal 10 karakter'); return }
+
+    const payload: SaveTestimonialInput = {
+      name: anonymous ? null : name.trim(),
+      is_anonymous: anonymous,
+      quote: quote.trim(),
+      rating: clampRating(rating),
+      is_active: active,
+    }
+
+    setBusy(true)
+    const { error } = await saveTestimonial(payload, item?.id)
+    setBusy(false)
+    if (error) { toast.error(error.message); return }
+    toast.success(item ? 'Testimoni diupdate' : 'Testimoni ditambahkan')
+    setOpen(false)
+    reset()
+    onSaved()
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (v) reset() }}>
+      <DialogTrigger render={<Button variant={item ? 'ghost' : 'default'} size={item ? 'icon-sm' : 'sm'} />}>
+        {item ? <Pencil className="size-4" /> : <><Plus className="size-4" /> Tambah</>}
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader><DialogTitle>{item ? 'Edit testimoni' : 'Tambah testimoni'}</DialogTitle></DialogHeader>
+        <form onSubmit={submit} className="space-y-4">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" checked={anonymous} onChange={e => setAnonymous(e.target.checked)} className="size-4 accent-primary" />
+            Tampilkan sebagai Anonymous
+          </label>
+          {!anonymous && (
+            <div className="space-y-2">
+              <Label>Nama</Label>
+              <Input value={name} onChange={e => setName(e.target.value)} placeholder="Nama customer" />
+            </div>
+          )}
+          <div className="space-y-2">
+            <Label>Rating</Label>
+            <Input type="number" min={1} max={5} value={rating} onChange={e => setRating(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>Quote</Label>
+            <Textarea value={quote} onChange={e => setQuote(e.target.value)} rows={4} placeholder="Tulis testimoni..." />
+          </div>
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} className="size-4 accent-primary" />
+            Aktif
+          </label>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>Batal</DialogClose>
+            <Button type="submit" disabled={busy}>{busy ? 'Menyimpan...' : 'Simpan'}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function GalleryCard({ item, onChanged }: { item: TestimonialGalleryItem; onChanged: () => void }) {
+  async function toggleActive() {
+    const { error } = await toggleTestimonialGalleryActive(item.id, !item.is_active)
+    if (error) { toast.error(error.message); return }
+    toast.success(item.is_active ? 'Gambar disembunyikan' : 'Gambar ditampilkan')
+    onChanged()
+  }
+
+  async function remove() {
+    const { error } = await deleteTestimonialGalleryItem(item.id)
+    if (error) { toast.error(error.message); return }
+    toast.success('Gambar dihapus')
+    onChanged()
+  }
+
+  return (
+    <div className="overflow-hidden rounded-2xl border bg-card">
+      <div className="flex h-48 items-center justify-center bg-muted/40 p-3">
+        <img src={item.image_url} alt={item.alt} className="max-h-full max-w-full object-contain" />
+      </div>
+      <div className="space-y-3 p-4">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold">{item.alt}</p>
+            <p className="truncate text-xs text-muted-foreground">{item.image_url}</p>
+          </div>
+          <Badge variant={item.is_active ? 'default' : 'secondary'}>{item.is_active ? 'Aktif' : 'Nonaktif'}</Badge>
+        </div>
+        <div className="flex justify-end gap-1">
+          <Button variant="ghost" size="icon-sm" onClick={toggleActive} title={item.is_active ? 'Sembunyikan' : 'Tampilkan'}>
+            {item.is_active ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+          </Button>
+          <GalleryDialog item={item} onSaved={onChanged} />
+          <ConfirmDialog
+            title="Hapus gambar?"
+            message="Gambar gallery ini akan dihapus permanen."
+            confirmLabel="Hapus"
+            destructive
+            onConfirm={remove}
+            trigger={<Button variant="ghost" size="icon-sm" title="Hapus" />}
+          >
+            <Trash2 className="size-4 text-destructive" />
+          </ConfirmDialog>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function GalleryDialog({ item, onSaved }: { item?: TestimonialGalleryItem; onSaved: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [imageUrl, setImageUrl] = useState(item?.image_url ?? '')
+  const [alt, setAlt] = useState(item?.alt ?? '')
+  const [active, setActive] = useState(item?.is_active ?? true)
+  const [busy, setBusy] = useState(false)
+
+  function reset() {
+    setImageUrl(item?.image_url ?? '')
+    setAlt(item?.alt ?? '')
+    setActive(item?.is_active ?? true)
+  }
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    if (!imageUrl.trim()) { toast.error('Image URL wajib diisi'); return }
+    if (!alt.trim()) { toast.error('Alt text wajib diisi'); return }
+
+    const payload: SaveTestimonialGalleryItemInput = {
+      image_url: imageUrl.trim(),
+      alt: alt.trim(),
+      is_active: active,
+    }
+
+    setBusy(true)
+    const { error } = await saveTestimonialGalleryItem(payload, item?.id)
+    setBusy(false)
+    if (error) { toast.error(error.message); return }
+    toast.success(item ? 'Gambar diupdate' : 'Gambar ditambahkan')
+    setOpen(false)
+    reset()
+    onSaved()
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (v) reset() }}>
+      <DialogTrigger render={<Button variant={item ? 'ghost' : 'default'} size={item ? 'icon-sm' : 'sm'} />}>
+        {item ? <Pencil className="size-4" /> : <><Plus className="size-4" /> Tambah</>}
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader><DialogTitle>{item ? 'Edit gambar' : 'Tambah gambar'}</DialogTitle></DialogHeader>
+        <form onSubmit={submit} className="space-y-4">
+          <div className="space-y-2">
+            <Label>Image URL</Label>
+            <Input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://... atau blob:..." />
+          </div>
+          <div className="space-y-2">
+            <Label>Alt text</Label>
+            <Input value={alt} onChange={e => setAlt(e.target.value)} placeholder="Screenshot bukti transaksi..." />
+          </div>
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} className="size-4 accent-primary" />
+            Aktif
+          </label>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>Batal</DialogClose>
+            <Button type="submit" disabled={busy}>{busy ? 'Menyimpan...' : 'Simpan'}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}

@@ -1,13 +1,20 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Quote, Star, ArrowRight, ChevronLeft, ChevronRight, Heart, Sparkles, Send, X } from 'lucide-react'
 import desktopBg from '@/assets/desktop.png'
 import portraitBg from '@/assets/potrait.png'
+import { createTestimonial, getTestimonialGallery, getTestimonials } from '@/lib/supabase'
+import type { Testimonial as DbTestimonial, TestimonialGalleryItem } from '@/types/database'
 
 type Testimonial = {
   quote: string
   stars: number
   name?: string
   anonymous?: boolean
+}
+
+type ProofImage = {
+  src: string
+  alt: string
 }
 
 const STATS = [
@@ -23,7 +30,7 @@ const FEATURED: Testimonial = {
   stars: 5,
 }
 
-const TESTIMONIALS: Testimonial[] = [
+const FALLBACK_TESTIMONIALS: Testimonial[] = [
   {
     quote:
       'Aku sewa profil Netflix buat maraton drakor weekend. Prosesnya cepet, profilnya langsung ready, dan nggak rebutan history tontonan orang lain.',
@@ -62,7 +69,7 @@ const TESTIMONIALS: Testimonial[] = [
   },
 ]
 
-const PROOF_IMAGES = [
+const FALLBACK_PROOF_IMAGES: ProofImage[] = [
   {
     src: 'blob:https://web.whatsapp.com/eddbdb4f-ad93-4567-b8f6-8d96928dc4df',
     alt: 'Screenshot bukti transaksi sewa profil Netflix 1',
@@ -79,12 +86,28 @@ const PROOF_IMAGES = [
     src: 'blob:https://web.whatsapp.com/f106ada4-e470-4a17-b767-24a4aed3c1d0',
     alt: 'Screenshot chat pelanggan sewa profil Netflix 4',
   },
-] as const
+]
 
 // ── tiny helpers ──────────────────────────────────────────────
 
 function getIdentity({ name, anonymous }: Pick<Testimonial, 'name' | 'anonymous'>) {
   return anonymous || !name?.trim() ? 'Anonymous' : name
+}
+
+function mapDbTestimonial(row: DbTestimonial): Testimonial {
+  return {
+    quote: row.quote,
+    stars: row.rating,
+    name: row.name ?? undefined,
+    anonymous: row.is_anonymous,
+  }
+}
+
+function mapDbGalleryItem(row: TestimonialGalleryItem): ProofImage {
+  return {
+    src: row.image_url,
+    alt: row.alt,
+  }
 }
 
 function IdentityAvatar({ label, size = 'md' }: { label: string; size?: 'sm' | 'md' }) {
@@ -164,7 +187,7 @@ function TestimonialCard({ quote, stars, index, ...author }: Testimonial & { ind
   )
 }
 
-function ProofImageCard({ image, index }: { image: (typeof PROOF_IMAGES)[number]; index: number }) {
+function ProofImageCard({ image, index }: { image: ProofImage; index: number }) {
   const tilt = ['-rotate-1', 'rotate-[1.25deg]', 'rotate-[-0.5deg]', 'rotate-[0.75deg]'][index % 4]
 
   return (
@@ -181,13 +204,15 @@ function ProofImageCard({ image, index }: { image: (typeof PROOF_IMAGES)[number]
   )
 }
 
-function SubmitTestimonial() {
+function SubmitTestimonial({ onSubmitted }: { onSubmitted: (testimonial: Testimonial) => void }) {
   const [open, setOpen] = useState(false)
   const [anonymous, setAnonymous] = useState(true)
   const [name, setName] = useState('')
   const [quote, setQuote] = useState('')
   const [stars, setStars] = useState(5)
   const [sent, setSent] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
 
   const reset = () => {
     setAnonymous(true)
@@ -195,15 +220,35 @@ function SubmitTestimonial() {
     setQuote('')
     setStars(5)
     setSent(false)
+    setBusy(false)
+    setError('')
   }
 
   const hasIdentity = anonymous || name.trim()
   const canSubmit = hasIdentity && quote.trim().length >= 10
 
-  const submit = (e: { preventDefault(): void }) => {
+  const submit = async (e: { preventDefault(): void }) => {
     e.preventDefault()
-    if (!canSubmit) return
-    // ponytail: no backend yet — just show success inline
+    if (!canSubmit || busy) return
+    setBusy(true)
+    setError('')
+    const { error } = await createTestimonial({
+      name: anonymous ? null : name.trim(),
+      is_anonymous: anonymous,
+      quote: quote.trim(),
+      rating: stars,
+    })
+    setBusy(false)
+    if (error) {
+      setError('Gagal kirim testimoni. Coba lagi ya.')
+      return
+    }
+    onSubmitted({
+      name: anonymous ? undefined : name.trim(),
+      anonymous,
+      quote: quote.trim(),
+      stars,
+    })
     setSent(true)
   }
 
@@ -315,22 +360,25 @@ function SubmitTestimonial() {
           {!anonymous && !name.trim() && (
             <p className="mt-1 text-xs text-stone-300">Isi nama, atau aktifkan Anonymous.</p>
           )}
+          {error && (
+            <p className="mt-1 text-xs font-semibold text-red-400">{error}</p>
+          )}
         </label>
       </div>
 
       <button
         type="submit"
-        disabled={!canSubmit}
+        disabled={!canSubmit || busy}
         className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-red-500 via-pink-500 to-fuchsia-400 py-3 text-sm font-bold text-white shadow-md shadow-pink-300/40 transition-all hover:from-red-600 hover:via-pink-600 hover:to-fuchsia-500 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
       >
         <Send className="size-4" />
-        Kirim Testimoni 💌
+        {busy ? 'Mengirim...' : 'Kirim Testimoni 💌'}
       </button>
     </form>
   )
 }
 
-function ProofWall() {
+function ProofWall({ images }: { images: ProofImage[] }) {
   return (
     <section className="relative mx-auto max-w-6xl px-4 pb-16 sm:px-6 lg:px-8">
       <div className="mb-8 text-center">
@@ -343,7 +391,7 @@ function ProofWall() {
         </p>
       </div>
       <div className="columns-1 gap-6 sm:columns-2 lg:columns-3">
-        {PROOF_IMAGES.map((image, index) => (
+        {images.map((image, index) => (
           <ProofImageCard key={image.src} image={image} index={index} />
         ))}
       </div>
@@ -354,11 +402,29 @@ function ProofWall() {
 // ── page ──────────────────────────────────────────────────────
 
 export default function Testimonials() {
+  const [testimonials, setTestimonials] = useState<Testimonial[]>(FALLBACK_TESTIMONIALS)
+  const [galleryImages, setGalleryImages] = useState<ProofImage[]>(FALLBACK_PROOF_IMAGES)
   const [page, setPage] = useState(0)
   const perPage = 3
-  const totalPages = Math.ceil(TESTIMONIALS.length / perPage)
-  const visible = TESTIMONIALS.slice(page * perPage, (page + 1) * perPage)
+  const totalPages = Math.ceil(testimonials.length / perPage)
+  const visible = testimonials.slice(page * perPage, (page + 1) * perPage)
   const featuredIdentity = getIdentity(FEATURED)
+
+  useEffect(() => {
+    let cancelled = false
+
+    Promise.all([getTestimonials(), getTestimonialGallery()]).then(([testimonialRes, galleryRes]) => {
+      if (cancelled) return
+      if (!testimonialRes.error && testimonialRes.data?.length) {
+        setTestimonials(testimonialRes.data.map(mapDbTestimonial))
+      }
+      if (!galleryRes.error && galleryRes.data?.length) {
+        setGalleryImages(galleryRes.data.map(mapDbGalleryItem))
+      }
+    }).catch(() => {})
+
+    return () => { cancelled = true }
+  }, [])
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#fef6f9] text-stone-700">
@@ -503,10 +569,13 @@ export default function Testimonials() {
       </section>
 
       <section className="relative mx-auto max-w-2xl px-4 pb-16 sm:px-6 lg:px-8">
-        <SubmitTestimonial />
+        <SubmitTestimonial onSubmitted={(testimonial) => {
+          setTestimonials((prev) => [testimonial, ...prev])
+          setPage(0)
+        }} />
       </section>
 
-      <ProofWall />
+      <ProofWall images={galleryImages} />
 
       {/* ── cta ──────────────────────────────────────────────── */}
       <footer className="relative border-t border-pink-200/50 px-4 py-24 text-center sm:px-6 lg:px-8">

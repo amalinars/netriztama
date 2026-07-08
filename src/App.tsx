@@ -5,6 +5,7 @@ import Orders from '@/pages/Orders'
 import Accounts from '@/pages/Accounts'
 import Logs from '@/pages/Logs'
 import Testimonials from '@/pages/Testimonials'
+import AdminTestimonials from '@/pages/AdminTestimonials'
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
           <Route path="/orders" element={<Orders />} />
           <Route path="/accounts" element={<Accounts />} />
           <Route path="/logs" element={<Logs />} />
+          <Route path="/admin/testimonials" element={<AdminTestimonials />} />
         </Route>
       </Routes>
     </BrowserRouter>

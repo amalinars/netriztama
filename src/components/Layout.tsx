@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router'
-import { LayoutDashboard, ShoppingCart, Tv, ScrollText, Sun, Moon } from 'lucide-react'
+import { LayoutDashboard, ShoppingCart, Tv, ScrollText, Sun, Moon, MessageSquareHeart } from 'lucide-react'
 import { Toaster } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { useTheme } from '@/lib/theme'
@@ -9,6 +9,7 @@ const NAV = [
   { to: '/orders', label: 'Orders', icon: ShoppingCart },
   { to: '/accounts', label: 'Akun', icon: Tv },
   { to: '/logs', label: 'Logs', icon: ScrollText },
+  { to: '/admin/testimonials', label: 'Testimonials', icon: MessageSquareHeart },
 ] as const
 
 export default function Layout() {
