@@ -4,11 +4,13 @@ import Dashboard from '@/pages/Dashboard'
 import Orders from '@/pages/Orders'
 import Accounts from '@/pages/Accounts'
 import Logs from '@/pages/Logs'
+import Testimonials from '@/pages/Testimonials'
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/testimonials" element={<Testimonials />} />
         <Route element={<Layout />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/orders" element={<Orders />} />
