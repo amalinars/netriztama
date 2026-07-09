@@ -30,10 +30,56 @@ function clampRating(value: string) {
   return Math.min(5, Math.max(1, Number(value) || 5))
 }
 
+function AdminPasswordGate({ onUnlock }: { onUnlock: () => void }) {
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+
+  function submit(e: FormEvent) {
+    e.preventDefault()
+    if (!ADMIN_PASSWORD) { setError('VITE_ADMIN_PASSWORD belum diisi di .env'); return }
+    if (password !== ADMIN_PASSWORD) { setError('Password salah'); return }
+    sessionStorage.setItem(ADMIN_UNLOCK_KEY, 'true')
+    onUnlock()
+  }
+
+  return (
+    <div className="mx-auto flex min-h-[70vh] max-w-md items-center justify-center">
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle>Masuk Admin</CardTitle>
+          <p className="text-sm text-muted-foreground">Isi password admin dulu untuk kelola testimoni.</p>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={submit} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Password</Label>
+              <Input
+                type="password"
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); setError('') }}
+                placeholder="Password admin"
+                autoFocus
+              />
+              {error && <p className="text-sm font-medium text-destructive">{error}</p>}
+            </div>
+            <Button type="submit" className="w-full">Masuk</Button>
+          </form>
+          <p className="mt-4 text-xs text-muted-foreground">
+            ponytail: ini cuma gate UI client-side; upgrade ke Supabase Auth + RLS kalau admin harus benar-benar privat.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
 type CloudinaryUploadResponse = {
   secure_url?: string
   error?: { message?: string }
 }
+
+const ADMIN_UNLOCK_KEY = 'netriztama-admin-unlocked'
+const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD
 
 async function uploadToCloudinary(file: File) {
   const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME
@@ -56,9 +102,10 @@ async function uploadToCloudinary(file: File) {
 }
 
 export default function AdminTestimonials() {
+  const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem(ADMIN_UNLOCK_KEY) === 'true')
   const [testimonials, setTestimonials] = useState<Testimonial[]>([])
   const [gallery, setGallery] = useState<TestimonialGalleryItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(unlocked)
 
   async function loadTestimonials() {
     const { data, error } = await getAdminTestimonials()
@@ -78,8 +125,9 @@ export default function AdminTestimonials() {
     setLoading(false)
   }
 
-  useEffect(() => { loadAll() }, [])
+  useEffect(() => { if (unlocked) loadAll() }, [unlocked])
 
+  if (!unlocked) return <AdminPasswordGate onUnlock={() => { setLoading(true); setUnlocked(true) }} />
   if (loading) return <div className="flex items-center justify-center py-20 text-muted-foreground">Memuat...</div>
 
   return (

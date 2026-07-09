@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Quote, Star, ArrowRight, ChevronLeft, ChevronRight, Heart, Sparkles, Send, X } from 'lucide-react'
+import { Quote, Star, ChevronLeft, ChevronRight, Heart, Sparkles, Send, X } from 'lucide-react'
 import desktopBg from '@/assets/desktop.png'
 import portraitBg from '@/assets/potrait.png'
 import { createTestimonial, getTestimonialGallery, getTestimonials } from '@/lib/supabase'
@@ -19,7 +19,6 @@ type ProofImage = {
 
 const STATS = [
   { value: '4.9', label: 'Rating sewa profil', emoji: '⭐' },
-  { value: '200+', label: 'Profil Netflix aktif', emoji: '📺' },
   { value: '98%', label: 'Repeat order', emoji: '💖' },
 ] as const
 
@@ -211,7 +210,6 @@ function ProofImageCard({ image, index, onOpen }: { image: ProofImage; index: nu
 }
 
 function SubmitTestimonial({ onSubmitted }: { onSubmitted: (testimonial: Testimonial) => void }) {
-  const [open, setOpen] = useState(false)
   const [anonymous, setAnonymous] = useState(true)
   const [name, setName] = useState('')
   const [quote, setQuote] = useState('')
@@ -258,20 +256,6 @@ function SubmitTestimonial({ onSubmitted }: { onSubmitted: (testimonial: Testimo
     setSent(true)
   }
 
-  if (!open) {
-    return (
-      <div className="text-center">
-        <button
-          onClick={() => setOpen(true)}
-          className="inline-flex items-center gap-2 rounded-2xl border-2 border-dashed border-pink-300/70 bg-white/70 px-6 py-4 text-sm font-semibold text-pink-500 backdrop-blur-sm transition-all hover:border-pink-400 hover:bg-white/90 hover:shadow-md hover:shadow-pink-200/30"
-        >
-          <Heart className="size-4 fill-red-400 text-red-400" />
-          Mau kasih testimoni sewa profil? Bisa anonim kok ✨
-        </button>
-      </div>
-    )
-  }
-
   if (sent) {
     return (
       <div className="rounded-[2rem] border-2 border-white/80 bg-white/85 p-8 text-center shadow-lg shadow-pink-200/30 backdrop-blur-sm">
@@ -281,7 +265,7 @@ function SubmitTestimonial({ onSubmitted }: { onSubmitted: (testimonial: Testimo
         <p className="text-lg font-bold text-stone-700">Makasih banget ya!</p>
         <p className="mt-1 text-sm text-stone-400">Testimoni sewa profil kamu udah masuk ✨</p>
         <button
-          onClick={() => { setOpen(false); reset() }}
+          onClick={reset}
           className="mt-5 text-sm font-medium text-pink-500 underline underline-offset-2 hover:text-pink-600"
         >
           Tulis lagi?
@@ -300,13 +284,6 @@ function SubmitTestimonial({ onSubmitted }: { onSubmitted: (testimonial: Testimo
           <Sparkles className="size-4" />
           Tulis Testimoni
         </h3>
-        <button
-          type="button"
-          onClick={() => { setOpen(false); reset() }}
-          className="rounded-lg p-1 text-stone-300 transition-colors hover:bg-pink-100 hover:text-pink-400"
-        >
-          <X className="size-4" />
-        </button>
       </div>
 
       <div className="space-y-4">
@@ -581,6 +558,13 @@ export default function Testimonials() {
         </div>
       </header>
 
+      <section className="relative mx-auto max-w-2xl px-4 py-12 sm:px-6 lg:px-8">
+        <SubmitTestimonial onSubmitted={(testimonial) => {
+          setTestimonials((prev) => [testimonial, ...prev])
+          setPage(0)
+        }} />
+      </section>
+
       {/* ── testimonial grid ─────────────────────────────────── */}
       <section className="relative mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-8">
         <div className="mb-8 flex items-center justify-between gap-4">
@@ -634,33 +618,7 @@ export default function Testimonials() {
         )}
       </section>
 
-      <section className="relative mx-auto max-w-2xl px-4 pb-16 sm:px-6 lg:px-8">
-        <SubmitTestimonial onSubmitted={(testimonial) => {
-          setTestimonials((prev) => [testimonial, ...prev])
-          setPage(0)
-        }} />
-      </section>
-
       <ProofWall images={galleryImages} />
-
-      {/* ── cta ──────────────────────────────────────────────── */}
-      <footer className="relative border-t border-pink-200/50 px-4 py-24 text-center sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-md">
-          <p className="text-sm font-bold tracking-widest text-red-400 uppercase">
-            💖 Siap nonton?
-          </p>
-          <p className="mt-4 text-2xl font-extrabold tracking-tight text-stone-800 sm:text-3xl">
-            Pilih profil Netflix, bayar, lalu lanjut maraton tanpa ribet.
-          </p>
-          <a
-            href="/"
-            className="mt-8 inline-flex items-center gap-2 rounded-2xl bg-linear-to-r from-red-500 via-pink-500 to-fuchsia-400 px-7 py-3.5 text-base font-bold text-white shadow-lg shadow-pink-300/40 transition-all hover:from-red-600 hover:via-pink-600 hover:to-fuchsia-500 hover:shadow-xl hover:shadow-pink-300/50 active:scale-[0.98]"
-          >
-            Pilih profil sekarang
-            <ArrowRight className="size-4" />
-          </a>
-        </div>
-      </footer>
     </div>
   )
 }
