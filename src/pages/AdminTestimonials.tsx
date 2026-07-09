@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type ChangeEvent, type DragEvent, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { MessageSquareHeart, Plus, Pencil, Trash2, Eye, EyeOff, Image as ImageIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -28,6 +28,31 @@ import type {
 
 function clampRating(value: string) {
   return Math.min(5, Math.max(1, Number(value) || 5))
+}
+
+type CloudinaryUploadResponse = {
+  secure_url?: string
+  error?: { message?: string }
+}
+
+async function uploadToCloudinary(file: File) {
+  const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME
+  const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET
+  if (!cloudName || !uploadPreset) throw new Error('Cloudinary belum dikonfigurasi')
+
+  const body = new FormData()
+  body.append('file', file)
+  body.append('upload_preset', uploadPreset)
+
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+    method: 'POST',
+    body,
+  })
+  const data = await response.json().catch(() => ({})) as CloudinaryUploadResponse
+
+  if (!response.ok) throw new Error(data.error?.message ?? 'Upload Cloudinary gagal')
+  if (!data.secure_url) throw new Error('Cloudinary tidak mengembalikan URL gambar')
+  return data.secure_url
 }
 
 export default function AdminTestimonials() {
@@ -93,14 +118,16 @@ export default function AdminTestimonials() {
             </CardTitle>
             <p className="text-sm text-muted-foreground">{gallery.length} gambar</p>
           </div>
-          <GalleryDialog onSaved={loadGallery} />
         </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {gallery.length === 0 ? (
-            <p className="col-span-full rounded-xl border border-dashed py-8 text-center text-sm text-muted-foreground">Belum ada gambar.</p>
-          ) : gallery.map(item => (
-            <GalleryCard key={item.id} item={item} onChanged={loadGallery} />
-          ))}
+        <CardContent className="space-y-4">
+          <GalleryUploader onSaved={loadGallery} />
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {gallery.length === 0 ? (
+              <p className="col-span-full rounded-xl border border-dashed py-8 text-center text-sm text-muted-foreground">Belum ada gambar.</p>
+            ) : gallery.map(item => (
+              <GalleryCard key={item.id} item={item} onChanged={loadGallery} />
+            ))}
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -234,6 +261,91 @@ function TestimonialDialog({ item, onSaved }: { item?: Testimonial; onSaved: () 
   )
 }
 
+function GalleryUploader({ onSaved }: { onSaved: () => void }) {
+  const [imageUrl, setImageUrl] = useState('')
+  const [alt, setAlt] = useState('')
+  const [dragging, setDragging] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  async function uploadFile(file?: File) {
+    if (!file) return
+    if (!file.type.startsWith('image/')) { toast.error('File harus gambar'); return }
+
+    setUploading(true)
+    try {
+      setImageUrl(await uploadToCloudinary(file))
+      if (!alt.trim()) setAlt(file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' '))
+      toast.success('Upload selesai')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Upload gagal')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  function handleDrop(e: DragEvent<HTMLLabelElement>) {
+    e.preventDefault()
+    setDragging(false)
+    void uploadFile(e.dataTransfer.files?.[0])
+  }
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    if (uploading) return
+    if (!imageUrl.trim()) { toast.error('Upload gambar atau isi Image URL dulu'); return }
+    if (!alt.trim()) { toast.error('Alt text wajib diisi'); return }
+
+    setSaving(true)
+    const { error } = await saveTestimonialGalleryItem({ image_url: imageUrl.trim(), alt: alt.trim(), is_active: true })
+    setSaving(false)
+    if (error) { toast.error(error.message); return }
+    toast.success('Gambar ditambahkan')
+    setImageUrl('')
+    setAlt('')
+    onSaved()
+  }
+
+  return (
+    <form onSubmit={submit} className="rounded-2xl border border-dashed bg-muted/30 p-4">
+      <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
+        <label
+          onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={handleDrop}
+          className={`flex min-h-52 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-6 text-center transition-colors ${
+            dragging ? 'border-primary bg-primary/10' : 'border-border bg-background/70 hover:bg-background'
+          }`}
+        >
+          <Input type="file" accept="image/*" onChange={(e: ChangeEvent<HTMLInputElement>) => uploadFile(e.target.files?.[0])} disabled={uploading || saving} className="sr-only" />
+          {imageUrl ? (
+            <img src={imageUrl} alt={alt || 'Preview upload'} className="max-h-44 max-w-full object-contain" />
+          ) : (
+            <>
+              <ImageIcon className="mb-3 size-8 text-muted-foreground" />
+              <span className="font-semibold">Drop gambar di sini</span>
+              <span className="mt-1 text-sm text-muted-foreground">atau klik untuk upload ke Cloudinary</span>
+            </>
+          )}
+        </label>
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label>Image URL</Label>
+            <Input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://res.cloudinary.com/..." disabled={uploading} />
+          </div>
+          <div className="space-y-2">
+            <Label>Alt text</Label>
+            <Input value={alt} onChange={e => setAlt(e.target.value)} placeholder="Screenshot bukti transaksi..." />
+          </div>
+          <Button type="submit" disabled={uploading || saving} className="w-full">
+            {uploading ? 'Uploading...' : saving ? 'Menyimpan...' : 'Simpan gambar'}
+          </Button>
+        </div>
+      </div>
+    </form>
+  )
+}
+
 function GalleryCard({ item, onChanged }: { item: TestimonialGalleryItem; onChanged: () => void }) {
   async function toggleActive() {
     const { error } = await toggleTestimonialGalleryActive(item.id, !item.is_active)
@@ -296,6 +408,7 @@ function GalleryDialog({ item, onSaved }: { item?: TestimonialGalleryItem; onSav
     setActive(item?.is_active ?? true)
   }
 
+
   async function submit(e: FormEvent) {
     e.preventDefault()
     if (!imageUrl.trim()) { toast.error('Image URL wajib diisi'); return }
@@ -323,11 +436,11 @@ function GalleryDialog({ item, onSaved }: { item?: TestimonialGalleryItem; onSav
         {item ? <Pencil className="size-4" /> : <><Plus className="size-4" /> Tambah</>}
       </DialogTrigger>
       <DialogContent>
-        <DialogHeader><DialogTitle>{item ? 'Edit gambar' : 'Tambah gambar'}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>Edit gambar</DialogTitle></DialogHeader>
         <form onSubmit={submit} className="space-y-4">
           <div className="space-y-2">
             <Label>Image URL</Label>
-            <Input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://... atau blob:..." />
+            <Input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://res.cloudinary.com/..." />
           </div>
           <div className="space-y-2">
             <Label>Alt text</Label>

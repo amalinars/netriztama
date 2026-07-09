@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Quote, Star, ArrowRight, ChevronLeft, ChevronRight, Heart, Sparkles, Send, X } from 'lucide-react'
 import desktopBg from '@/assets/desktop.png'
 import portraitBg from '@/assets/potrait.png'
@@ -187,20 +187,26 @@ function TestimonialCard({ quote, stars, index, ...author }: Testimonial & { ind
   )
 }
 
-function ProofImageCard({ image, index }: { image: ProofImage; index: number }) {
+function ProofImageCard({ image, index, onOpen }: { image: ProofImage; index: number; onOpen: () => void }) {
   const tilt = ['-rotate-1', 'rotate-[1.25deg]', 'rotate-[-0.5deg]', 'rotate-[0.75deg]'][index % 4]
 
   return (
-    <figure className={`relative mb-6 break-inside-avoid rounded-[2rem] bg-white/85 p-3 shadow-xl shadow-pink-200/35 backdrop-blur-sm ${tilt} motion-reduce:rotate-0`}>
-      <div className={`absolute left-1/2 top-0 h-7 w-24 -translate-x-1/2 -translate-y-1/2 rounded-[0.55rem] ${CARD_TAPES[index % CARD_TAPES.length]} shadow-sm shadow-pink-200/40`} />
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={`Lihat full ${image.alt}`}
+      className={`relative rounded-[2rem] bg-white/85 p-4 text-left shadow-xl shadow-pink-200/35 backdrop-blur-sm transition-transform hover:-translate-y-1 hover:shadow-2xl hover:shadow-pink-200/50 focus:outline-none focus:ring-4 focus:ring-pink-300/40 ${tilt} motion-reduce:transform-none`}
+    >
+      <div className={`absolute left-1/2 top-0 h-8 w-28 -translate-x-1/2 -translate-y-1/2 rounded-[0.55rem] ${CARD_TAPES[index % CARD_TAPES.length]} shadow-sm shadow-pink-200/40`} />
       <img
         src={image.src}
         alt={image.alt}
         loading="lazy"
         decoding="async"
-        className="block h-auto w-full rounded-[1.45rem] border border-pink-100/70 object-contain"
+        className="block h-auto w-full rounded-[1.6rem] border border-pink-100/70 object-contain"
       />
-    </figure>
+      <span className="mt-3 block text-center text-xs font-bold text-pink-400">Klik buat lihat full ✨</span>
+    </button>
   )
 }
 
@@ -379,22 +385,82 @@ function SubmitTestimonial({ onSubmitted }: { onSubmitted: (testimonial: Testimo
 }
 
 function ProofWall({ images }: { images: ProofImage[] }) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null)
+  const activeImage = activeIndex === null ? null : images[activeIndex]
+  const showPrev = useCallback(() => setActiveIndex((i) => i === null ? 0 : (i - 1 + images.length) % images.length), [images.length])
+  const showNext = useCallback(() => setActiveIndex((i) => i === null ? 0 : (i + 1) % images.length), [images.length])
+
+  useEffect(() => {
+    if (activeIndex === null) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setActiveIndex(null)
+      if (e.key === 'ArrowLeft') showPrev()
+      if (e.key === 'ArrowRight') showNext()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [activeIndex, images.length])
+
   return (
-    <section className="relative mx-auto max-w-6xl px-4 pb-16 sm:px-6 lg:px-8">
+    <section className="relative mx-auto max-w-5xl px-4 pb-16 sm:px-6 lg:px-8">
       <div className="mb-8 text-center">
         <p className="text-sm font-black tracking-widest text-red-400 uppercase">Gallery transaksi</p>
         <h2 className="mt-3 text-2xl font-black tracking-tight text-stone-800 sm:text-3xl">
           Bukti chat & transaksi penyewa profil Netflix.
         </h2>
         <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-stone-500">
-          Layout Pinterest-style, gambar tampil utuh tanpa crop. Source sekarang pakai blob WhatsApp sesuai request.
+          Klik gambar buat lihat full, lalu geser pakai tombol kiri/kanan.
         </p>
       </div>
-      <div className="columns-1 gap-6 sm:columns-2 lg:columns-3">
+      <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
         {images.map((image, index) => (
-          <ProofImageCard key={image.src} image={image} index={index} />
+          <ProofImageCard key={image.src} image={image} index={index} onOpen={() => setActiveIndex(index)} />
         ))}
       </div>
+
+      {activeImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/85 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Full preview gallery transaksi"
+          onClick={() => setActiveIndex(null)}
+        >
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setActiveIndex(null) }}
+            className="absolute right-4 top-4 rounded-full bg-white/15 p-3 text-white backdrop-blur transition-colors hover:bg-white/25"
+            aria-label="Tutup preview"
+          >
+            <X className="size-5" />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); showPrev() }}
+            className="absolute left-4 top-1/2 -translate-y-1/2 rounded-full bg-white/15 p-3 text-white backdrop-blur transition-colors hover:bg-white/25"
+            aria-label="Gambar sebelumnya"
+          >
+            <ChevronLeft className="size-6" />
+          </button>
+          <img
+            src={activeImage.src}
+            alt={activeImage.alt}
+            className="max-h-[82vh] max-w-[88vw] rounded-[1.5rem] bg-white/10 object-contain shadow-2xl shadow-black/30"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); showNext() }}
+            className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-white/15 p-3 text-white backdrop-blur transition-colors hover:bg-white/25"
+            aria-label="Gambar berikutnya"
+          >
+            <ChevronRight className="size-6" />
+          </button>
+          <p className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-white/15 px-4 py-2 text-sm font-semibold text-white backdrop-blur">
+            {(activeIndex ?? 0) + 1} / {images.length}
+          </p>
+        </div>
+      )}
     </section>
   )
 }
