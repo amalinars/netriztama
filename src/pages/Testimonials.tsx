@@ -177,6 +177,8 @@ function TestimonialCard({ quote, stars, index, ...author }: Testimonial & { ind
 
 function ProofImageCard({ image, index, onOpen }: { image: ProofImage; index: number; onOpen: () => void }) {
   const tilt = ['-rotate-1', 'rotate-[1.25deg]', 'rotate-[-0.5deg]', 'rotate-[0.75deg]'][index % 4]
+  // ponytail: hash sederhana dari src buat id SVG pattern yang unik — ganti ke crypto.randomUUID() kalau perlu lebih robust
+  const uid = image.src.replace(/[^a-zA-Z0-9]/g, '').slice(-20)
 
   return (
     <button
@@ -186,13 +188,26 @@ function ProofImageCard({ image, index, onOpen }: { image: ProofImage; index: nu
       className={`relative rounded-[2rem] bg-white/85 p-4 text-left shadow-xl shadow-pink-200/35 backdrop-blur-sm transition-transform hover:-translate-y-1 hover:shadow-2xl hover:shadow-pink-200/50 focus:outline-none focus:ring-4 focus:ring-pink-300/40 ${tilt} motion-reduce:transform-none`}
     >
       <div className={`absolute left-1/2 top-0 h-8 w-28 -translate-x-1/2 -translate-y-1/2 rounded-[0.55rem] ${CARD_TAPES[index % CARD_TAPES.length]} shadow-sm shadow-pink-200/40`} />
-      <img
-        src={image.src}
-        alt={image.alt}
-        loading="lazy"
-        decoding="async"
-        className="block h-auto w-full rounded-[1.6rem] border border-pink-100/70 object-contain"
-      />
+      <div className="relative overflow-hidden rounded-[1.6rem] border border-pink-100/70">
+        <img
+          src={image.src}
+          alt={image.alt}
+          loading="lazy"
+          decoding="async"
+          className="block h-auto w-full object-contain"
+        />
+        <div className="pointer-events-none absolute inset-0 z-10 select-none mix-blend-difference" aria-hidden="true">
+          <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <pattern id={`wm-${uid}`} x="0" y="0" width="200" height="90" patternUnits="userSpaceOnUse" patternTransform="rotate(-18)">
+                <text x="0" y="38" fill="white" fontFamily="system-ui,sans-serif" fontSize="14" fontWeight="700" opacity="0.45">Testi Milik Ris</text>
+                <text x="100" y="78" fill="white" fontFamily="system-ui,sans-serif" fontSize="14" fontWeight="700" opacity="0.45">Testi Milik Ris</text>
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill={`url(#wm-${uid})`} />
+          </svg>
+        </div>
+      </div>
       <span className="mt-3 block text-center text-xs font-bold text-pink-400">Klik buat lihat full ✨</span>
     </button>
   )
@@ -353,13 +368,13 @@ function SubmitTestimonial({ onSubmitted }: { onSubmitted: (testimonial: Testimo
 function ProofWall({ images }: { images: ProofImage[] }) {
   const [expanded, setExpanded] = useState(false)
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
-  const [galleryPage, setGalleryPage] = useState(0)
-  const perGalleryPage = 4
+  const [visibleCount, setVisibleCount] = useState(4)
+  const perLoad = 4
 
   const previewImages = images.slice(0, 2)
   const gridImages = expanded ? images.slice(2) : []
-  const totalGalleryPages = Math.ceil(gridImages.length / perGalleryPage)
-  const visibleGrid = gridImages.slice(galleryPage * perGalleryPage, (galleryPage + 1) * perGalleryPage)
+  const visibleGrid = gridImages.slice(0, visibleCount)
+  const hasMore = visibleCount < gridImages.length
 
   const activeImage = activeIndex === null ? null : images[activeIndex]
   const showPrev = useCallback(() => setActiveIndex((i) => i === null ? 0 : (i - 1 + images.length) % images.length), [images.length])
@@ -392,6 +407,7 @@ function ProofWall({ images }: { images: ProofImage[] }) {
       <div className="flex flex-col gap-8">
         {previewImages.map((image, index) => {
           const tilt = index === 0 ? '-rotate-1' : 'rotate-[1.25deg]'
+          const uid = image.src.replace(/[^a-zA-Z0-9]/g, '').slice(-20)
           return (
             <button
               key={image.src}
@@ -401,13 +417,26 @@ function ProofWall({ images }: { images: ProofImage[] }) {
               className={`group relative w-full overflow-hidden rounded-[2.5rem] border-2 border-white/80 bg-white/85 p-5 text-left shadow-xl shadow-pink-200/35 backdrop-blur-sm transition-all hover:-translate-y-1 hover:shadow-2xl hover:shadow-pink-200/50 focus:outline-none focus:ring-4 focus:ring-pink-300/40 ${tilt} motion-reduce:transform-none`}
             >
               <div className={`absolute left-1/2 top-0 h-8 w-28 -translate-x-1/2 -translate-y-1/2 rounded-[0.55rem] ${CARD_TAPES[index % CARD_TAPES.length]} shadow-sm shadow-pink-200/40`} />
-              <img
-                src={image.src}
-                alt={image.alt}
-                loading="lazy"
-                decoding="async"
-                className="block h-auto w-full rounded-[2rem] border border-pink-100/70 object-contain"
-              />
+              <div className="relative overflow-hidden rounded-[2rem] border border-pink-100/70">
+                <img
+                  src={image.src}
+                  alt={image.alt}
+                  loading="lazy"
+                  decoding="async"
+                  className="block h-auto w-full object-contain"
+                />
+                <div className="pointer-events-none absolute inset-0 z-10 select-none mix-blend-difference" aria-hidden="true">
+                  <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                      <pattern id={`wm-${uid}`} x="0" y="0" width="220" height="100" patternUnits="userSpaceOnUse" patternTransform="rotate(-18)">
+                        <text x="0" y="42" fill="white" fontFamily="system-ui,sans-serif" fontSize="16" fontWeight="700" opacity="0.45">Testi Milik Ris</text>
+                        <text x="110" y="88" fill="white" fontFamily="system-ui,sans-serif" fontSize="16" fontWeight="700" opacity="0.45">Testi Milik Ris</text>
+                      </pattern>
+                    </defs>
+                    <rect width="100%" height="100%" fill={`url(#wm-${uid})`} />
+                  </svg>
+                </div>
+              </div>
               <span className="mt-4 block text-center text-sm font-bold text-pink-400 transition-colors group-hover:text-pink-500">
                 Klik buat lihat full ✨
               </span>
@@ -439,44 +468,24 @@ function ProofWall({ images }: { images: ProofImage[] }) {
             </h3>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+          <div className="columns-1 sm:columns-2 gap-6">
             {visibleGrid.map((image, index) => (
-              <ProofImageCard key={image.src} image={image} index={index} onOpen={() => setActiveIndex(images.indexOf(image))} />
+              <div key={image.src} className="break-inside-avoid mb-6">
+                <ProofImageCard image={image} index={index} onOpen={() => setActiveIndex(images.indexOf(image))} />
+              </div>
             ))}
           </div>
 
-          {totalGalleryPages > 1 && (
-            <nav className="mt-8 flex items-center justify-center gap-2" aria-label="Pagination gallery">
+          {hasMore && (
+            <div className="mt-10 text-center">
               <button
-                onClick={() => setGalleryPage((p) => Math.max(0, p - 1))}
-                disabled={galleryPage === 0}
-                className="rounded-2xl bg-white/75 p-3 text-stone-400 shadow-sm shadow-pink-100 transition-colors hover:bg-pink-50 hover:text-pink-500 disabled:cursor-not-allowed disabled:opacity-35"
-                aria-label="Halaman sebelumnya"
+                onClick={() => setVisibleCount((c) => c + perLoad)}
+                className="inline-flex items-center gap-2 rounded-2xl bg-white/85 px-7 py-3.5 text-sm font-bold text-pink-500 shadow-lg shadow-pink-200/30 backdrop-blur-sm transition-all hover:bg-pink-50 hover:shadow-xl hover:shadow-pink-200/50"
               >
-                <ChevronLeft className="size-4" />
+                Muat lebih banyak
+                <ChevronLeft className="size-4 rotate-[-90deg]" />
               </button>
-              {Array.from({ length: totalGalleryPages }).map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setGalleryPage(i)}
-                  aria-current={galleryPage === i ? 'page' : undefined}
-                  className={`h-11 min-w-11 rounded-2xl px-4 text-sm font-black shadow-sm transition-all ${galleryPage === i
-                    ? 'bg-red-400 text-white shadow-red-200'
-                    : 'bg-white/75 text-pink-300 shadow-pink-100 hover:bg-pink-50 hover:text-pink-500'
-                    }`}
-                >
-                  {i + 1}
-                </button>
-              ))}
-              <button
-                onClick={() => setGalleryPage((p) => Math.min(totalGalleryPages - 1, p + 1))}
-                disabled={galleryPage >= totalGalleryPages - 1}
-                className="rounded-2xl bg-white/75 p-3 text-stone-400 shadow-sm shadow-pink-100 transition-colors hover:bg-pink-50 hover:text-pink-500 disabled:cursor-not-allowed disabled:opacity-35"
-                aria-label="Halaman berikutnya"
-              >
-                <ChevronRight className="size-4" />
-              </button>
-            </nav>
+            </div>
           )}
         </>
       )}
@@ -506,12 +515,24 @@ function ProofWall({ images }: { images: ProofImage[] }) {
           >
             <ChevronLeft className="size-6" />
           </button>
-          <img
-            src={activeImage.src}
-            alt={activeImage.alt}
-            className="max-h-[82vh] max-w-[88vw] rounded-[1.5rem] bg-white/10 object-contain shadow-2xl shadow-black/30"
-            onClick={(e) => e.stopPropagation()}
-          />
+          <div className="relative" onClick={(e) => e.stopPropagation()}>
+            <img
+              src={activeImage.src}
+              alt={activeImage.alt}
+              className="max-h-[82vh] max-w-[88vw] rounded-[1.5rem] bg-white/10 object-contain shadow-2xl shadow-black/30"
+            />
+            <div className="pointer-events-none absolute inset-0 z-10 select-none mix-blend-difference rounded-[1.5rem] overflow-hidden" aria-hidden="true">
+              <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <pattern id="wm-lb" x="0" y="0" width="220" height="100" patternUnits="userSpaceOnUse" patternTransform="rotate(-18)">
+                    <text x="0" y="42" fill="white" fontFamily="system-ui,sans-serif" fontSize="18" fontWeight="700" opacity="0.45">Testi Milik Ris</text>
+                    <text x="110" y="88" fill="white" fontFamily="system-ui,sans-serif" fontSize="18" fontWeight="700" opacity="0.45">Testi Milik Ris</text>
+                  </pattern>
+                </defs>
+                <rect width="100%" height="100%" fill="url(#wm-lb)" />
+              </svg>
+            </div>
+          </div>
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); showNext() }}
