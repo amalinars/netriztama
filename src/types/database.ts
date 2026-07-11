@@ -91,3 +91,13 @@ export type SaveTestimonialGalleryItemInput = {
   is_active: boolean
 }
 
+export type PublicProfileAvailability = {
+  id: string
+  name: string
+  status: 'available' | 'booked'
+  currentOrder?: {
+    end_date: string
+    logout_time: string
+  }
+}
+

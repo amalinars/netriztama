@@ -5,6 +5,9 @@ import type {
   SaveTestimonialInput,
   Testimonial,
   TestimonialGalleryItem,
+  Order,
+  Profile,
+  PublicProfileAvailability,
 } from '@/types/database'
 
 export const supabase = createClient(
@@ -34,8 +37,7 @@ export function getTestimonials() {
     .from('testimonials')
     .select('*')
     .eq('is_active', true)
-    .order('sort_order')
-    .order('created_at') as unknown as Promise<{ data: Testimonial[] | null; error: Error | null }>
+    .order('created_at', { ascending: false }) as unknown as Promise<{ data: Testimonial[] | null; error: Error | null }>
 }
 
 export function getTestimonialGallery() {
@@ -58,6 +60,49 @@ export function createTestimonial(input: CreateTestimonialInput) {
       sort_order: 0,
       is_active: true,
     }) as unknown as Promise<{ error: Error | null }>
+}
+
+function deadlineMs(endDate: string, logoutTime?: string | null) {
+  return new Date(`${endDate}T${(logoutTime ?? '23:59').slice(0, 5)}:00`).getTime()
+}
+
+export async function getPublicProfileAvailability(): Promise<{ data: PublicProfileAvailability[] | null; error: Error | null }> {
+  const [profilesRes, ordersRes] = await Promise.all([
+    supabase.from('profiles').select('id, name, is_rentable').eq('is_rentable', true).order('name'),
+    supabase.from('orders').select('profile_id, end_date, logout_time').eq('status', 'booked'),
+  ]) as [
+    { data: Pick<Profile, 'id' | 'name' | 'is_rentable'>[] | null; error: Error | null },
+    { data: Pick<Order, 'profile_id' | 'end_date' | 'logout_time'>[] | null; error: Error | null },
+  ]
+
+  if (profilesRes.error) return { data: null, error: profilesRes.error }
+  if (ordersRes.error) return { data: null, error: ordersRes.error }
+
+  const now = Date.now()
+  const booked = new Map<string, Pick<Order, 'end_date' | 'logout_time'>>()
+  for (const order of ordersRes.data ?? []) {
+    if (deadlineMs(order.end_date, order.logout_time) <= now) continue
+    const current = booked.get(order.profile_id)
+    if (!current || deadlineMs(order.end_date, order.logout_time) < deadlineMs(current.end_date, current.logout_time)) {
+      booked.set(order.profile_id, order)
+    }
+  }
+
+  return {
+    data: (profilesRes.data ?? []).map((profile): PublicProfileAvailability => {
+      const currentOrder = booked.get(profile.id)
+      return {
+        id: profile.id,
+        name: profile.name,
+        status: currentOrder ? 'booked' : 'available',
+        currentOrder: currentOrder && {
+          end_date: currentOrder.end_date,
+          logout_time: currentOrder.logout_time,
+        },
+      }
+    }),
+    error: null,
+  }
 }
 
 export function getAdminTestimonials() {

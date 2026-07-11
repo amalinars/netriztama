@@ -17,17 +17,6 @@ type ProofImage = {
   alt: string
 }
 
-const STATS = [
-  { value: '4.9', label: 'Rating sewa profil', emoji: '⭐' },
-  { value: '98%', label: 'Repeat order', emoji: '💖' },
-] as const
-
-const FEATURED: Testimonial = {
-  quote:
-    'Sewa profil Netflix di sini paling aman sejauh ini. Dikasih profil sendiri, PIN dibantu set, terus kalau ada kendala adminnya gercep banget. Cocok buat yang mau nonton tanpa drama.',
-  name: 'Naya',
-  stars: 5,
-}
 
 const FALLBACK_TESTIMONIALS: Testimonial[] = [
   {
@@ -362,7 +351,16 @@ function SubmitTestimonial({ onSubmitted }: { onSubmitted: (testimonial: Testimo
 }
 
 function ProofWall({ images }: { images: ProofImage[] }) {
+  const [expanded, setExpanded] = useState(false)
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
+  const [galleryPage, setGalleryPage] = useState(0)
+  const perGalleryPage = 4
+
+  const previewImages = images.slice(0, 2)
+  const gridImages = expanded ? images.slice(2) : []
+  const totalGalleryPages = Math.ceil(gridImages.length / perGalleryPage)
+  const visibleGrid = gridImages.slice(galleryPage * perGalleryPage, (galleryPage + 1) * perGalleryPage)
+
   const activeImage = activeIndex === null ? null : images[activeIndex]
   const showPrev = useCallback(() => setActiveIndex((i) => i === null ? 0 : (i - 1 + images.length) % images.length), [images.length])
   const showNext = useCallback(() => setActiveIndex((i) => i === null ? 0 : (i + 1) % images.length), [images.length])
@@ -379,22 +377,111 @@ function ProofWall({ images }: { images: ProofImage[] }) {
   }, [activeIndex, images.length])
 
   return (
-    <section className="relative mx-auto max-w-5xl px-4 pb-16 sm:px-6 lg:px-8">
+    <section className="relative mx-auto w-full max-w-6xl px-4 pb-16 sm:px-6 lg:px-8">
       <div className="mb-8 text-center">
         <p className="text-sm font-black tracking-widest text-red-400 uppercase">Gallery transaksi</p>
         <h2 className="mt-3 text-2xl font-black tracking-tight text-stone-800 sm:text-3xl">
           Bukti chat & transaksi penyewa profil Netflix.
         </h2>
         <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-stone-500">
-          Klik gambar buat lihat full, lalu geser pakai tombol kiri/kanan.
+          Klik gambar buat lihat full.
         </p>
       </div>
-      <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
-        {images.map((image, index) => (
-          <ProofImageCard key={image.src} image={image} index={index} onOpen={() => setActiveIndex(index)} />
-        ))}
+
+      {/* ── 2 gambar awal vertical besar ── */}
+      <div className="flex flex-col gap-8">
+        {previewImages.map((image, index) => {
+          const tilt = index === 0 ? '-rotate-1' : 'rotate-[1.25deg]'
+          return (
+            <button
+              key={image.src}
+              type="button"
+              onClick={() => setActiveIndex(index)}
+              aria-label={`Lihat full ${image.alt}`}
+              className={`group relative w-full overflow-hidden rounded-[2.5rem] border-2 border-white/80 bg-white/85 p-5 text-left shadow-xl shadow-pink-200/35 backdrop-blur-sm transition-all hover:-translate-y-1 hover:shadow-2xl hover:shadow-pink-200/50 focus:outline-none focus:ring-4 focus:ring-pink-300/40 ${tilt} motion-reduce:transform-none`}
+            >
+              <div className={`absolute left-1/2 top-0 h-8 w-28 -translate-x-1/2 -translate-y-1/2 rounded-[0.55rem] ${CARD_TAPES[index % CARD_TAPES.length]} shadow-sm shadow-pink-200/40`} />
+              <img
+                src={image.src}
+                alt={image.alt}
+                loading="lazy"
+                decoding="async"
+                className="block h-auto w-full rounded-[2rem] border border-pink-100/70 object-contain"
+              />
+              <span className="mt-4 block text-center text-sm font-bold text-pink-400 transition-colors group-hover:text-pink-500">
+                Klik buat lihat full ✨
+              </span>
+            </button>
+          )
+        })}
       </div>
 
+      {/* ── tombol lihat lebih banyak ── */}
+      {!expanded && images.length > 2 && (
+        <div className="mt-10 text-center">
+          <button
+            onClick={() => setExpanded(true)}
+            className="inline-flex items-center gap-2 rounded-2xl bg-white/85 px-7 py-3.5 text-sm font-bold text-pink-500 shadow-lg shadow-pink-200/30 backdrop-blur-sm transition-all hover:bg-pink-50 hover:shadow-xl hover:shadow-pink-200/50"
+          >
+            Lihat lebih banyak gallery
+            <ChevronLeft className="size-4 rotate-[-90deg]" />
+          </button>
+        </div>
+      )}
+
+      {/* ── expanded grid + pagination ── */}
+      {expanded && gridImages.length > 0 && (
+        <>
+          <div className="mt-12 mb-6">
+            <h3 className="flex items-center gap-2 text-sm font-bold tracking-widest text-pink-400 uppercase">
+              <Sparkles className="size-4" />
+              Gallery lainnya
+            </h3>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            {visibleGrid.map((image, index) => (
+              <ProofImageCard key={image.src} image={image} index={index} onOpen={() => setActiveIndex(images.indexOf(image))} />
+            ))}
+          </div>
+
+          {totalGalleryPages > 1 && (
+            <nav className="mt-8 flex items-center justify-center gap-2" aria-label="Pagination gallery">
+              <button
+                onClick={() => setGalleryPage((p) => Math.max(0, p - 1))}
+                disabled={galleryPage === 0}
+                className="rounded-2xl bg-white/75 p-3 text-stone-400 shadow-sm shadow-pink-100 transition-colors hover:bg-pink-50 hover:text-pink-500 disabled:cursor-not-allowed disabled:opacity-35"
+                aria-label="Halaman sebelumnya"
+              >
+                <ChevronLeft className="size-4" />
+              </button>
+              {Array.from({ length: totalGalleryPages }).map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => setGalleryPage(i)}
+                  aria-current={galleryPage === i ? 'page' : undefined}
+                  className={`h-11 min-w-11 rounded-2xl px-4 text-sm font-black shadow-sm transition-all ${galleryPage === i
+                    ? 'bg-red-400 text-white shadow-red-200'
+                    : 'bg-white/75 text-pink-300 shadow-pink-100 hover:bg-pink-50 hover:text-pink-500'
+                    }`}
+                >
+                  {i + 1}
+                </button>
+              ))}
+              <button
+                onClick={() => setGalleryPage((p) => Math.min(totalGalleryPages - 1, p + 1))}
+                disabled={galleryPage >= totalGalleryPages - 1}
+                className="rounded-2xl bg-white/75 p-3 text-stone-400 shadow-sm shadow-pink-100 transition-colors hover:bg-pink-50 hover:text-pink-500 disabled:cursor-not-allowed disabled:opacity-35"
+                aria-label="Halaman berikutnya"
+              >
+                <ChevronRight className="size-4" />
+              </button>
+            </nav>
+          )}
+        </>
+      )}
+
+      {/* ── lightbox ── */}
       {activeImage && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/85 p-4 backdrop-blur-sm"
@@ -448,10 +535,21 @@ export default function Testimonials() {
   const [testimonials, setTestimonials] = useState<Testimonial[]>(FALLBACK_TESTIMONIALS)
   const [galleryImages, setGalleryImages] = useState<ProofImage[]>(FALLBACK_PROOF_IMAGES)
   const [page, setPage] = useState(0)
-  const perPage = 3
-  const totalPages = Math.ceil(testimonials.length / perPage)
-  const visible = testimonials.slice(page * perPage, (page + 1) * perPage)
-  const featuredIdentity = getIdentity(FEATURED)
+  const perPage = 6
+
+  // featured = testimoni terbaru (index 0 after sorting by newest)
+  const featured = testimonials[0] ?? FALLBACK_TESTIMONIALS[0]
+  const featuredIdentity = getIdentity(featured)
+
+  // rating rata-rata dari semua testimoni (dinamis)
+  const avgRating = testimonials.length > 0
+    ? (testimonials.reduce((sum, t) => sum + t.stars, 0) / testimonials.length).toFixed(1)
+    : '5.0'
+
+  // testimoni yang ditampilkan di grid (semua kecuali featured)
+  const gridTestimonials = testimonials.length > 1 ? testimonials.slice(1) : testimonials
+  const totalPages = Math.ceil(gridTestimonials.length / perPage)
+  const visible = gridTestimonials.slice(page * perPage, (page + 1) * perPage)
 
   useEffect(() => {
     let cancelled = false
@@ -523,12 +621,15 @@ export default function Testimonials() {
             Testimoni Sewa Profil Netflix
           </div>
 
-          {/* featured quote card */}
+          {/* featured quote card — testimoni terbaru */}
           <div className="relative mx-auto max-w-2xl overflow-hidden rounded-[2.25rem] border-2 border-white/80 bg-white/85 p-8 shadow-xl shadow-pink-200/35 backdrop-blur-sm sm:p-10">
             <div className="absolute left-8 top-0 h-4 w-32 rounded-b-full bg-linear-to-r from-red-200 via-pink-200 to-fuchsia-200" />
+            <div className="absolute right-4 top-4 rounded-full bg-pink-100 px-3 py-1 text-xs font-bold text-pink-400">
+              ✨ Terbaru
+            </div>
             <Quote className="mx-auto mb-4 size-10 rotate-[-8deg] text-red-300/80" />
             <blockquote className="text-pretty text-lg leading-relaxed text-stone-600 sm:text-xl">
-              &ldquo;{FEATURED.quote}&rdquo;
+              &ldquo;{featured.quote}&rdquo;
             </blockquote>
             <div className="mt-6 flex items-center justify-center gap-3">
               <IdentityAvatar label={featuredIdentity} />
@@ -537,23 +638,26 @@ export default function Testimonials() {
               </div>
             </div>
             <div className="mt-3 flex justify-center">
-              <StarRating stars={FEATURED.stars} />
+              <StarRating stars={featured.stars} />
             </div>
           </div>
 
-          {/* stats */}
+          {/* rating rata-rata dinamis */}
           <div className="mt-10 flex flex-wrap items-center justify-center gap-8 sm:gap-12">
-            {STATS.map((s) => (
-              <div key={s.label} className="text-center">
-                <div className="mb-1 text-3xl font-extrabold tracking-tight text-stone-800 sm:text-4xl">
-                  {s.value}
-                </div>
-                <div className="flex items-center justify-center gap-1.5 text-sm text-stone-400">
-                  <span>{s.emoji}</span>
-                  <span>{s.label}</span>
-                </div>
+            <div className="text-center">
+              <div className="mb-2 flex items-center justify-center gap-1.5">
+                <span className="text-4xl font-extrabold tracking-tight text-stone-800">
+                  {avgRating}
+                </span>
+                <Star className="size-7 fill-amber-300 text-amber-300" />
               </div>
-            ))}
+              <div className="flex items-center justify-center gap-1">
+                <StarRating stars={Math.round(Number(avgRating))} />
+              </div>
+              <div className="mt-1 text-sm text-stone-400">
+                dari {testimonials.length} testimoni
+              </div>
+            </div>
           </div>
         </div>
       </header>

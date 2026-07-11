@@ -5,6 +5,7 @@ import Orders from '@/pages/Orders'
 import Accounts from '@/pages/Accounts'
 import Logs from '@/pages/Logs'
 import Testimonials from '@/pages/Testimonials'
+import SelfService from '@/pages/SelfService'
 import AdminTestimonials from '@/pages/AdminTestimonials'
 
 export default function App() {
@@ -12,6 +13,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/testimonials" element={<Testimonials />} />
+        <Route path="/self-service" element={<SelfService />} />
         <Route path="/" element={<Navigate to="/admin" replace />} />
         <Route path="/orders" element={<Navigate to="/admin/orders" replace />} />
         <Route path="/accounts" element={<Navigate to="/admin/accounts" replace />} />
