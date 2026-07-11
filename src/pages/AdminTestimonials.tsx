@@ -50,7 +50,7 @@ async function addWatermarkToImage(file: File): Promise<File> {
       ctx.drawImage(img, 0, 0)
 
       // Watermark "Testi Milik Ris" miring — diulang menutupi seluruh gambar
-      const text = 'Testi Milik Ris'
+      const text = 'Testi Punya Ris'
       const fontSize = Math.max(18, Math.round(img.width / 28))
       ctx.font = `bold ${fontSize}px system-ui, sans-serif`
       ctx.fillStyle = 'rgba(255,255,255,0.45)'
