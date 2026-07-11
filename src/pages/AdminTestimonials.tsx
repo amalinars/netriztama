@@ -49,12 +49,13 @@ async function addWatermarkToImage(file: File): Promise<File> {
 
       ctx.drawImage(img, 0, 0)
 
-      // Watermark "Testi Milik Ris" miring — diulang menutupi seluruh gambar
+      // Watermark "Testi Punya Ris" miring — pakai difference blend agar kelihatan di gambar terang maupun gelap
       const text = 'Testi Punya Ris'
       const fontSize = Math.max(18, Math.round(img.width / 28))
       ctx.font = `bold ${fontSize}px system-ui, sans-serif`
       ctx.fillStyle = 'rgba(255,255,255,0.45)'
       ctx.textAlign = 'center'
+      ctx.globalCompositeOperation = 'difference'
 
       const stepX = fontSize * 10
       const stepY = fontSize * 4.5
@@ -62,7 +63,6 @@ async function addWatermarkToImage(file: File): Promise<File> {
       ctx.save()
       ctx.translate(canvas.width / 2, canvas.height / 2)
       ctx.rotate((-18 * Math.PI) / 180)
-      // Rentang diperlebar untuk menutupi seluruh area setelah rotasi
       const diagonal = Math.sqrt(canvas.width ** 2 + canvas.height ** 2)
       const cols = Math.ceil(diagonal / stepX) + 2
       const rows = Math.ceil(diagonal / stepY) + 2
