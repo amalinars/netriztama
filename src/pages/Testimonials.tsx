@@ -177,8 +177,6 @@ function TestimonialCard({ quote, stars, index, ...author }: Testimonial & { ind
 
 function ProofImageCard({ image, index, onOpen }: { image: ProofImage; index: number; onOpen: () => void }) {
   const tilt = ['-rotate-1', 'rotate-[1.25deg]', 'rotate-[-0.5deg]', 'rotate-[0.75deg]'][index % 4]
-  // ponytail: hash sederhana dari src buat id SVG pattern yang unik — ganti ke crypto.randomUUID() kalau perlu lebih robust
-  const uid = image.src.replace(/[^a-zA-Z0-9]/g, '').slice(-20)
 
   return (
     <button
@@ -196,17 +194,6 @@ function ProofImageCard({ image, index, onOpen }: { image: ProofImage; index: nu
           decoding="async"
           className="block h-auto w-full object-contain"
         />
-        <div className="pointer-events-none absolute inset-0 z-10 select-none mix-blend-difference" aria-hidden="true">
-          <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <pattern id={`wm-${uid}`} x="0" y="0" width="200" height="90" patternUnits="userSpaceOnUse" patternTransform="rotate(-18)">
-                <text x="0" y="38" fill="white" fontFamily="system-ui,sans-serif" fontSize="14" fontWeight="700" opacity="0.45">Testi Milik Ris</text>
-                <text x="100" y="78" fill="white" fontFamily="system-ui,sans-serif" fontSize="14" fontWeight="700" opacity="0.45">Testi Milik Ris</text>
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill={`url(#wm-${uid})`} />
-          </svg>
-        </div>
       </div>
       <span className="mt-3 block text-center text-xs font-bold text-pink-400">Klik buat lihat full ✨</span>
     </button>
@@ -407,7 +394,6 @@ function ProofWall({ images }: { images: ProofImage[] }) {
       <div className="flex flex-col gap-8">
         {previewImages.map((image, index) => {
           const tilt = index === 0 ? '-rotate-1' : 'rotate-[1.25deg]'
-          const uid = image.src.replace(/[^a-zA-Z0-9]/g, '').slice(-20)
           return (
             <button
               key={image.src}
@@ -425,17 +411,6 @@ function ProofWall({ images }: { images: ProofImage[] }) {
                   decoding="async"
                   className="block h-auto w-full object-contain"
                 />
-                <div className="pointer-events-none absolute inset-0 z-10 select-none mix-blend-difference" aria-hidden="true">
-                  <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-                    <defs>
-                      <pattern id={`wm-${uid}`} x="0" y="0" width="220" height="100" patternUnits="userSpaceOnUse" patternTransform="rotate(-18)">
-                        <text x="0" y="42" fill="white" fontFamily="system-ui,sans-serif" fontSize="16" fontWeight="700" opacity="0.45">Testi Milik Ris</text>
-                        <text x="110" y="88" fill="white" fontFamily="system-ui,sans-serif" fontSize="16" fontWeight="700" opacity="0.45">Testi Milik Ris</text>
-                      </pattern>
-                    </defs>
-                    <rect width="100%" height="100%" fill={`url(#wm-${uid})`} />
-                  </svg>
-                </div>
               </div>
               <span className="mt-4 block text-center text-sm font-bold text-pink-400 transition-colors group-hover:text-pink-500">
                 Klik buat lihat full ✨
@@ -515,24 +490,12 @@ function ProofWall({ images }: { images: ProofImage[] }) {
           >
             <ChevronLeft className="size-6" />
           </button>
-          <div className="relative" onClick={(e) => e.stopPropagation()}>
-            <img
-              src={activeImage.src}
-              alt={activeImage.alt}
-              className="max-h-[82vh] max-w-[88vw] rounded-[1.5rem] bg-white/10 object-contain shadow-2xl shadow-black/30"
-            />
-            <div className="pointer-events-none absolute inset-0 z-10 select-none mix-blend-difference rounded-[1.5rem] overflow-hidden" aria-hidden="true">
-              <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                  <pattern id="wm-lb" x="0" y="0" width="220" height="100" patternUnits="userSpaceOnUse" patternTransform="rotate(-18)">
-                    <text x="0" y="42" fill="white" fontFamily="system-ui,sans-serif" fontSize="18" fontWeight="700" opacity="0.45">Testi Milik Ris</text>
-                    <text x="110" y="88" fill="white" fontFamily="system-ui,sans-serif" fontSize="18" fontWeight="700" opacity="0.45">Testi Milik Ris</text>
-                  </pattern>
-                </defs>
-                <rect width="100%" height="100%" fill="url(#wm-lb)" />
-              </svg>
-            </div>
-          </div>
+          <img
+            src={activeImage.src}
+            alt={activeImage.alt}
+            className="max-h-[82vh] max-w-[88vw] rounded-[1.5rem] bg-white/10 object-contain shadow-2xl shadow-black/30"
+            onClick={(e) => e.stopPropagation()}
+          />
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); showNext() }}

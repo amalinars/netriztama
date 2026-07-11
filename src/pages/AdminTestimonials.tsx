@@ -35,13 +35,69 @@ type CloudinaryUploadResponse = {
   error?: { message?: string }
 }
 
+async function addWatermarkToImage(file: File): Promise<File> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const canvas = document.createElement('canvas')
+      canvas.width = img.width
+      canvas.height = img.height
+      const ctx = canvas.getContext('2d')!
+
+      ctx.drawImage(img, 0, 0)
+
+      // Watermark "Testi Milik Ris" miring — diulang menutupi seluruh gambar
+      const text = 'Testi Milik Ris'
+      const fontSize = Math.max(18, Math.round(img.width / 28))
+      ctx.font = `bold ${fontSize}px system-ui, sans-serif`
+      ctx.fillStyle = 'rgba(255,255,255,0.45)'
+      ctx.textAlign = 'center'
+
+      const stepX = fontSize * 10
+      const stepY = fontSize * 4.5
+
+      ctx.save()
+      ctx.translate(canvas.width / 2, canvas.height / 2)
+      ctx.rotate((-18 * Math.PI) / 180)
+      // Rentang diperlebar untuk menutupi seluruh area setelah rotasi
+      const diagonal = Math.sqrt(canvas.width ** 2 + canvas.height ** 2)
+      const cols = Math.ceil(diagonal / stepX) + 2
+      const rows = Math.ceil(diagonal / stepY) + 2
+      const offsetX = -(cols / 2) * stepX
+      const offsetY = -(rows / 2) * stepY
+
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          ctx.fillText(text, offsetX + col * stepX, offsetY + row * stepY)
+        }
+      }
+      ctx.restore()
+
+      canvas.toBlob((blob) => {
+        if (!blob) return reject(new Error('Gagal membuat watermark'))
+        const watermarkedFile = new File([blob], file.name, { type: 'image/png' })
+        resolve(watermarkedFile)
+      }, 'image/png')
+    }
+
+    img.onerror = () => reject(new Error('Gagal membaca gambar'))
+    img.src = url
+  })
+}
+
 async function uploadToCloudinary(file: File) {
   const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME
   const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET
   if (!cloudName || !uploadPreset) throw new Error('Cloudinary belum dikonfigurasi')
 
+  // Proses watermark di canvas sebelum upload
+  const watermarked = await addWatermarkToImage(file)
+
   const body = new FormData()
-  body.append('file', file)
+  body.append('file', watermarked)
   body.append('upload_preset', uploadPreset)
 
   const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
