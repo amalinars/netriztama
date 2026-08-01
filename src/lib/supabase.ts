@@ -8,6 +8,10 @@ import type {
   Order,
   Profile,
   PublicProfileAvailability,
+  FinancialSettings,
+  Expense,
+  SaveExpenseInput,
+  OrderWithProfile,
 } from '@/types/database'
 
 export const supabase = createClient(
@@ -175,4 +179,71 @@ export function toggleTestimonialGalleryActive(id: string, isActive: boolean) {
     .from('testimonial_gallery')
     .update({ is_active: isActive })
     .eq('id', id) as unknown as Promise<{ error: Error | null }>
+}
+
+export async function getFinancialSettings(): Promise<{ data: FinancialSettings | null; error: Error | null }> {
+  const { data, error } = await supabase.from('financial_settings').select('*').limit(1).maybeSingle()
+  return { data: data as FinancialSettings | null, error: error as Error | null }
+}
+
+export async function updateInitialBalance(initialBalance: number): Promise<{ error: Error | null }> {
+  const existing = await getFinancialSettings()
+  if (existing.data?.id) {
+    return (await supabase.from('financial_settings').update({ initial_balance: initialBalance, updated_at: new Date().toISOString() }).eq('id', existing.data.id)) as unknown as Promise<{ error: Error | null }>
+  } else {
+    return (await supabase.from('financial_settings').insert({ initial_balance: initialBalance })) as unknown as Promise<{ error: Error | null }>
+  }
+}
+
+export async function getExpenses(): Promise<{ data: Expense[] | null; error: Error | null }> {
+  return supabase.from('expenses').select('*').order('expense_date', { ascending: false }).order('created_at', { ascending: false }) as unknown as Promise<{ data: Expense[] | null; error: Error | null }>
+}
+
+export async function createExpense(input: SaveExpenseInput): Promise<{ error: Error | null }> {
+  return supabase.from('expenses').insert({
+    title: input.title,
+    amount: input.amount,
+    category: input.category || 'General',
+    expense_date: input.expense_date,
+    notes: input.notes || null,
+  }) as unknown as Promise<{ error: Error | null }>
+}
+
+export async function deleteExpense(id: string): Promise<{ error: Error | null }> {
+  return supabase.from('expenses').delete().eq('id', id) as unknown as Promise<{ error: Error | null }>
+}
+
+export async function getFinancialsOrdersSummary(): Promise<{
+  settledOrdersTotal: number
+  unsettledOrdersTotal: number
+  unsettledOrders: OrderWithProfile[]
+  error: Error | null
+}> {
+  const { data, error } = await supabase
+    .from('orders')
+    .select('*, profiles(*, accounts(*))')
+    .order('created_at', { ascending: false }) as unknown as { data: OrderWithProfile[] | null; error: Error | null }
+
+  if (error || !data) {
+    return { settledOrdersTotal: 0, unsettledOrdersTotal: 0, unsettledOrders: [], error }
+  }
+
+  let settledOrdersTotal = 0
+  let unsettledOrdersTotal = 0
+  const unsettledOrders: OrderWithProfile[] = []
+
+  for (const order of data) {
+    if (order.is_settled) {
+      settledOrdersTotal += order.price
+    } else {
+      unsettledOrdersTotal += order.price
+      unsettledOrders.push(order)
+    }
+  }
+
+  return { settledOrdersTotal, unsettledOrdersTotal, unsettledOrders, error: null }
+}
+
+export async function settleAllPendingOrders(): Promise<{ error: Error | null }> {
+  return (supabase as never as { rpc: (name: string) => Promise<{ error: Error | null }> }).rpc('settle_all_pending_orders')
 }
