@@ -32,8 +32,33 @@ export type Order = {
   end_date: string
   logout_time: string
   status: 'booked' | 'done'
+  is_settled: boolean
   notes: string | null
   created_at: string
+}
+
+export type FinancialSettings = {
+  id: string
+  initial_balance: number
+  updated_at: string
+}
+
+export type Expense = {
+  id: string
+  title: string
+  amount: number
+  category: string
+  expense_date: string
+  notes: string | null
+  created_at: string
+}
+
+export type SaveExpenseInput = {
+  title: string
+  amount: number
+  category: string
+  expense_date: string
+  notes?: string
 }
 
 export type OrderWithProfile = Order & {
