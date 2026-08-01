@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router'
-import { LayoutDashboard, ShoppingCart, Tv, ScrollText, Sun, Moon, MessageSquareHeart } from 'lucide-react'
+import { LayoutDashboard, ShoppingCart, Tv, Wallet, ScrollText, Sun, Moon, MessageSquareHeart } from 'lucide-react'
 import { Toaster } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -12,6 +12,7 @@ const NAV = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/admin/orders', label: 'Orders', icon: ShoppingCart },
   { to: '/admin/accounts', label: 'Akun', icon: Tv },
+  { to: '/admin/financials', label: 'Financials', icon: Wallet },
   { to: '/admin/logs', label: 'Logs', icon: ScrollText },
   { to: '/admin/testimonials', label: 'Testimonials', icon: MessageSquareHeart },
 ] as const

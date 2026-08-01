@@ -36,9 +36,6 @@ export default function Financials() {
   const [expenseCategory, setExpenseCategory] = useState('Netflix Account')
   const [expenseDate, setExpenseDate] = useState(new Date().toISOString().split('T')[0])
   const [expenseNotes, setExpenseNotes] = useState('')
-  const [settling, setSettling] = useState(false)
-  const [confirmSettleOpen, setConfirmSettleOpen] = useState(false)
-  const [deletingExpenseId, setDeletingExpenseId] = useState<string | null>(null)
 
   async function loadData() {
     setLoading(true)
@@ -112,24 +109,18 @@ export default function Financials() {
     }
   }
 
-  async function handleDeleteExpense() {
-    if (!deletingExpenseId) return
-    const { error } = await deleteExpense(deletingExpenseId)
+  async function handleDeleteExpense(id: string) {
+    const { error } = await deleteExpense(id)
     if (error) {
       toast.error('Gagal menghapus pengeluaran')
     } else {
       toast.success('Pengeluaran berhasil dihapus')
       loadData()
     }
-    setDeletingExpenseId(null)
   }
 
   async function handleSettleAll() {
-    setSettling(true)
     const { error } = await settleAllPendingOrders()
-    setSettling(false)
-    setConfirmSettleOpen(false)
-
     if (error) {
       toast.error('Gagal menyetorkan order ke wallet utama')
     } else {
@@ -244,14 +235,18 @@ export default function Financials() {
             </CardDescription>
           </div>
           {unsettledOrders.length > 0 && (
-            <Button
-              className="bg-amber-600 hover:bg-amber-700 text-white"
-              onClick={() => setConfirmSettleOpen(true)}
-              disabled={settling}
-            >
-              <CheckCircle2 className="mr-1.5 size-4" />
-              Setorkan Semua ke Wallet Utama
-            </Button>
+            <ConfirmDialog
+              title="Setorkan Pembayaran ke Wallet Utama?"
+              message={`Semua ${unsettledOrders.length} order yang belum disetor (total ${formatRupiah(unsettledOrdersTotal)}) akan ditandai sudah disetor ke Wallet Utama (Actual Revenue).`}
+              confirmLabel="Ya, Setorkan Sekarang"
+              onConfirm={handleSettleAll}
+              trigger={
+                <Button className="bg-amber-600 hover:bg-amber-700 text-white">
+                  <CheckCircle2 className="mr-1.5 size-4" />
+                  Setorkan Semua ke Wallet Utama
+                </Button>
+              }
+            />
           )}
         </CardHeader>
         <CardContent>
@@ -361,14 +356,18 @@ export default function Financials() {
                         {formatRupiah(expense.amount)}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          className="text-muted-foreground hover:text-destructive"
-                          onClick={() => setDeletingExpenseId(expense.id)}
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
+                        <ConfirmDialog
+                          title="Hapus Catatan Pengeluaran?"
+                          message="Catatan pengeluaran ini akan dihapus permanen. Saldo Wallet Utama akan bertambah kembali sebesar nominal pengeluaran ini."
+                          confirmLabel="Hapus Pengeluaran"
+                          destructive
+                          onConfirm={() => handleDeleteExpense(expense.id)}
+                          trigger={
+                            <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive">
+                              <Trash2 className="size-4" />
+                            </Button>
+                          }
+                        />
                       </td>
                     </tr>
                   ))}
@@ -400,9 +399,7 @@ export default function Financials() {
               </p>
             </div>
             <DialogFooter>
-              <DialogClose asChild>
-                <Button type="button" variant="ghost">Batal</Button>
-              </DialogClose>
+              <DialogClose render={<Button type="button" variant="ghost" />}>Batal</DialogClose>
               <Button type="submit">Simpan Saldo Awal</Button>
             </DialogFooter>
           </form>
@@ -461,34 +458,12 @@ export default function Financials() {
               />
             </div>
             <DialogFooter>
-              <DialogClose asChild>
-                <Button type="button" variant="ghost">Batal</Button>
-              </DialogClose>
+              <DialogClose render={<Button type="button" variant="ghost" />}>Batal</DialogClose>
               <Button type="submit">Simpan Pengeluaran</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
-
-      {/* Confirm Settle All Pending Orders Dialog */}
-      <ConfirmDialog
-        open={confirmSettleOpen}
-        onOpenChange={setConfirmSettleOpen}
-        title="Setorkan Pembayaran ke Wallet Utama?"
-        description={`Semua ${unsettledOrders.length} order yang belum disetor (total ${formatRupiah(unsettledOrdersTotal)}) akan ditandai sudah disetor ke Wallet Utama (Actual Revenue). Akumulasi ini akan langsung menambah saldo Wallet Utama.`}
-        confirmText="Ya, Setorkan Sekarang"
-        onConfirm={handleSettleAll}
-      />
-
-      {/* Confirm Delete Expense Dialog */}
-      <ConfirmDialog
-        open={!!deletingExpenseId}
-        onOpenChange={(open) => !open && setDeletingExpenseId(null)}
-        title="Hapus Catatan Pengeluaran?"
-        description="Catatan pengeluaran ini akan dihapus permanen. Saldo Wallet Utama akan bertambah kembali sebesar nominal pengeluaran ini."
-        confirmText="Hapus Pengeluaran"
-        onConfirm={handleDeleteExpense}
-      />
     </div>
   )
 }

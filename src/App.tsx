@@ -7,6 +7,7 @@ import Logs from '@/pages/Logs'
 import Testimonials from '@/pages/Testimonials'
 import SelfService from '@/pages/SelfService'
 import AdminTestimonials from '@/pages/AdminTestimonials'
+import Financials from '@/pages/Financials'
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="orders" element={<Orders />} />
           <Route path="accounts" element={<Accounts />} />
+          <Route path="financials" element={<Financials />} />
           <Route path="logs" element={<Logs />} />
           <Route path="testimonials" element={<AdminTestimonials />} />
         </Route>
