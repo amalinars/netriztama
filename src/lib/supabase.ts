@@ -213,10 +213,15 @@ export async function deleteExpense(id: string): Promise<{ error: Error | null }
   return supabase.from('expenses').delete().eq('id', id) as unknown as Promise<{ error: Error | null }>
 }
 
+export async function settleAllPendingOrders(): Promise<{ error: Error | null }> {
+  return (supabase as never as { rpc: (name: string) => Promise<{ error: Error | null }> }).rpc('settle_all_pending_orders')
+}
+
 export async function getFinancialsOrdersSummary(): Promise<{
   settledOrdersTotal: number
   unsettledOrdersTotal: number
   unsettledOrders: OrderWithProfile[]
+  allOrders: OrderWithProfile[]
   error: Error | null
 }> {
   const { data, error } = await supabase
@@ -225,7 +230,7 @@ export async function getFinancialsOrdersSummary(): Promise<{
     .order('created_at', { ascending: false }) as unknown as { data: OrderWithProfile[] | null; error: Error | null }
 
   if (error || !data) {
-    return { settledOrdersTotal: 0, unsettledOrdersTotal: 0, unsettledOrders: [], error }
+    return { settledOrdersTotal: 0, unsettledOrdersTotal: 0, unsettledOrders: [], allOrders: [], error }
   }
 
   let settledOrdersTotal = 0
@@ -241,9 +246,15 @@ export async function getFinancialsOrdersSummary(): Promise<{
     }
   }
 
-  return { settledOrdersTotal, unsettledOrdersTotal, unsettledOrders, error: null }
+  return { settledOrdersTotal, unsettledOrdersTotal, unsettledOrders, allOrders: data, error: null }
 }
 
-export async function settleAllPendingOrders(): Promise<{ error: Error | null }> {
-  return (supabase as never as { rpc: (name: string) => Promise<{ error: Error | null }> }).rpc('settle_all_pending_orders')
+export async function settleSelectedOrders(orderIds: string[]): Promise<{ error: Error | null }> {
+  if (orderIds.length === 0) return { error: null }
+  return (await supabase
+    .from('orders')
+    .update({ is_settled: true })
+    .in('id', orderIds)) as unknown as Promise<{ error: Error | null }>
 }
+
+
