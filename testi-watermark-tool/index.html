@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Testimonial Watermark & Card Generator</title>
+  <!-- Google Fonts: Plus Jakarta Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="logo-area">
+        <div class="logo-icon">✨</div>
+        <div>
+          <h1>TestiMark Generator</h1>
+          <p>Tambahkan Watermark & Badge Testimoni Otomatis ke Gambar (100% Offline)</p>
+        </div>
+      </div>
+      <div class="status-pill">
+        <span class="dot"></span> 100% Client-Side & Safe
+      </div>
+    </header>
+
+    <!-- Main Content Layout -->
+    <main class="app-main">
+      <!-- Control Panel (Sidebar Left) -->
+      <section class="control-panel">
+        <div class="panel-card">
+          <h2>⚙️ Pengaturan Tag & Watermark</h2>
+          
+          <!-- Store Info -->
+          <div class="form-group">
+            <label for="storeName">Nama Toko / Bisnis</label>
+            <input type="text" id="storeName" value="Kedai Premium" placeholder="Contoh: Kedai Premium" />
+          </div>
+
+          <div class="form-group">
+            <label for="storeHandle">Username / Handle (X / IG / WA)</label>
+            <input type="text" id="storeHandle" value="@kedaipremium" placeholder="Contoh: @kedaipremium" />
+          </div>
+
+          <!-- Tag Text & Rating -->
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="tagText">Label Tag</label>
+              <input type="text" id="tagText" value="REAL TESTIMONI" placeholder="Contoh: VERIFIED TESTI" />
+            </div>
+            <div class="form-group flex-1">
+              <label for="ratingStars">Rating Bintang</label>
+              <select id="ratingStars">
+                <option value="5" selected>⭐⭐⭐⭐⭐ (5/5)</option>
+                <option value="4">⭐⭐⭐⭐ (4/5)</option>
+                <option value="3">⭐⭐⭐ (3/5)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Watermark Teks Tengah -->
+          <div class="form-group">
+            <label for="watermarkText">Teks Watermark Samar (Tengah/Background)</label>
+            <input type="text" id="watermarkText" value="KEDAI PREMIUM • TRUSTED SELLER" placeholder="Teks watermark diagonal" />
+          </div>
+
+          <!-- Style & Color Settings -->
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="badgePosition">Posisi Tag Badge</label>
+              <select id="badgePosition">
+                <option value="bottom-right" selected>Bawah Kanan</option>
+                <option value="bottom-left">Bawah Kiri</option>
+                <option value="top-right">Atas Kanan</option>
+                <option value="top-left">Atas Kiri</option>
+              </select>
+            </div>
+            <div class="form-group flex-1">
+              <label for="badgeColor">Warna Theme Badge</label>
+              <select id="badgeColor">
+                <option value="emerald" selected>Emerald Green (Trust)</option>
+                <option value="purple">Neon Purple (Modern)</option>
+                <option value="cyan">Ocean Cyan (Fresh)</option>
+                <option value="amber">Warm Gold (Premium)</option>
+                <option value="dark">Sleek Dark Glass</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Toggles -->
+          <div class="toggle-group">
+            <label class="toggle-item">
+              <input type="checkbox" id="showWatermarkBg" checked />
+              <span class="toggle-custom"></span>
+              <span>Tampilkan Watermark Teks Diagonal</span>
+            </label>
+            
+            <label class="toggle-item">
+              <input type="checkbox" id="showVerifiedIcon" checked />
+              <span class="toggle-custom"></span>
+              <span>Tampilkan Centang Verified (✔)</span>
+            </label>
+
+            <label class="toggle-item">
+              <input type="checkbox" id="showBorder" checked />
+              <span class="toggle-custom"></span>
+              <span>Gunakan Frame Border Elegant</span>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <!-- Canvas Preview Area (Right) -->
+      <section class="preview-panel">
+        <div class="preview-card">
+          <div class="preview-header">
+            <h3>🖼️ Live Preview Gambar</h3>
+            <span class="preview-hint" id="imageDimensions">Upload gambar untuk melihat hasil</span>
+          </div>
+
+          <!-- Dropzone / Canvas Container -->
+          <div class="canvas-wrapper" id="dropArea">
+            <div class="upload-placeholder" id="uploadPlaceholder">
+              <div class="upload-icon">📸</div>
+              <p class="primary-text">Drag & drop gambar screenshot testimoni di sini</p>
+              <p class="secondary-text">atau klik tombol di bawah untuk memilih file</p>
+              <button class="btn-select-file" onclick="document.getElementById('fileInput').click()">
+                📂 Pilih File Gambar
+              </button>
+              <input type="file" id="fileInput" accept="image/*" style="display: none" />
+            </div>
+
+            <!-- Canvas Element -->
+            <canvas id="testiCanvas" style="display: none;"></canvas>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="action-bar">
+            <button class="btn-action btn-secondary" id="btnChangeImage" style="display: none;" onclick="document.getElementById('fileInput').click()">
+              🔄 Ganti Gambar
+            </button>
+            <button class="btn-action btn-primary" id="btnDownload" disabled>
+              ⚡ Download Gambar Watermark (.PNG)
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <p>Dibuat khusus untuk bisnis penyewaan di X • Tanpa Server • 100% Gratis & Langsung Download</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
