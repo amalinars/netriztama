@@ -17,6 +17,8 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import LogoutTimeField from '@/components/LogoutTimeField'
 import ProfilePinStatus from '@/components/ProfilePinStatus'
 import EditProfileDialog from '@/components/EditProfileDialog'
+import SwitchProfileDialog from '@/components/SwitchProfileDialog'
+import HistoryDialog from '@/components/HistoryDialog'
 import { Search, CheckCircle2, AlertTriangle, List, LayoutGrid, Calendar, Tag, RefreshCw, Pencil, Trash2, KeyRound, Clock, Copy } from 'lucide-react'
 
 async function copyText(text: string, label = 'Disalin') {
@@ -57,7 +59,7 @@ export default function Orders() {
 
   async function fetchOrders() {
     const [{ data: ordData }, { data: accData }] = await Promise.all([
-      supabase.from('orders').select('*, profiles(*, accounts(id, name, password))').order('created_at', { ascending: false }),
+      supabase.from('orders').select('*, profiles(*, accounts(id, name, password, is_active))').order('created_at', { ascending: false }),
       supabase.from('accounts').select('*, profiles(*)').order('created_at'),
     ])
     setOrders(ordData ?? [])
@@ -81,9 +83,12 @@ export default function Orders() {
   }
 
   const bookedProfileIds = new Set(orders.filter(o => o.status === 'booked').map(o => o.profile_id))
-  const availableProfiles = accounts.flatMap(acc => acc.profiles
-    .filter(p => p.is_rentable && !bookedProfileIds.has(p.id) && (selectedAccount === 'all' || acc.id === selectedAccount))
+  
+  const allAvailableProfiles = accounts.flatMap(acc => acc.profiles
+    .filter(p => p.is_rentable && !bookedProfileIds.has(p.id) && acc.is_active)
     .map(p => ({ ...p, account: acc })))
+
+  const availableProfiles = allAvailableProfiles.filter(p => selectedAccount === 'all' || p.account.id === selectedAccount)
 
   function orderMatchesSearch(o: OrderWithProfile) {
     if (selectedAccount !== 'all' && o.profiles.accounts.id !== selectedAccount) return false
@@ -127,13 +132,24 @@ export default function Orders() {
 
   const today = new Date().toISOString().split('T')[0]
 
-  const pendingPins = accounts.flatMap(a => a.profiles.filter(p => p.pin_change_pending).map(p => ({ ...p, accountName: a.name })))
+  const pendingPins = accounts.filter(a => a.is_active).flatMap(a => a.profiles.filter(p => p.pin_change_pending).map(p => ({ ...p, accountName: a.name })))
 
   const cooldownAccounts = accounts.map(acc => {
     const remainingMs = getAccountCooldown(acc.id)
     if (remainingMs <= 0) return null
     return { account: acc, remainingMs }
   }).filter((item): item is NonNullable<typeof item> => item !== null)
+
+  const visibleAccounts = accounts.filter(acc => {
+    if (acc.is_active) return true
+    // If inactive, only show if it has active 'booked' orders
+    return orders.some(o => o.profiles.account_id === acc.id && o.status === 'booked')
+  })
+
+  const sortedAccounts = [...visibleAccounts].sort((a, b) => {
+    if (a.is_active !== b.is_active) return a.is_active ? -1 : 1
+    return a.name.localeCompare(b.name)
+  })
 
   if (loading) return <div className="flex items-center justify-center py-20 text-muted-foreground">Memuat...</div>
 
@@ -187,16 +203,22 @@ export default function Orders() {
           <h1 className="text-2xl font-bold tracking-tight">Orders</h1>
           <p className="text-muted-foreground">{viewMode === 'card' ? `${visibleAvailable.length} tersedia · ${visibleBooked.length} booked · ${visibleDone.length} selesai` : filterStatus === 'available' ? `${visibleAvailable.length} profil tersedia` : `${filtered.length} dari ${orders.length} order`}</p>
         </div>
-        <AddOrderDialog onSaved={fetchOrders} />
       </div>
 
       <div className="flex gap-1.5 flex-wrap">
         <Button variant={selectedAccount === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setSelectedAccount('all')}>
           Semua Akun
         </Button>
-        {accounts.map(acc => (
-          <Button key={acc.id} variant={selectedAccount === acc.id ? 'default' : 'outline'} size="sm" onClick={() => setSelectedAccount(acc.id)} className="truncate max-w-48">
+        {sortedAccounts.map(acc => (
+          <Button 
+            key={acc.id} 
+            variant={selectedAccount === acc.id ? (acc.is_active ? 'default' : 'destructive') : 'outline'} 
+            size="sm" 
+            onClick={() => setSelectedAccount(acc.id)} 
+            className={`truncate max-w-48 ${!acc.is_active && selectedAccount !== acc.id ? 'opacity-70 border-dashed text-muted-foreground' : ''}`}
+          >
             {acc.name.split('@')[0]}
+            {!acc.is_active && <span className="ml-1 text-[10px] uppercase tracking-wider opacity-80">(Nonaktif)</span>}
           </Button>
         ))}
       </div>
@@ -239,7 +261,7 @@ export default function Orders() {
                   profile={p}
                   onChanged={fetchOrders}
                   onRent={() => setRenting({ accountId: p.account.id, profileId: p.id })}
-                  isRentDisabled={getAccountCooldown(p.account.id) > 0}
+                  isRentDisabled={getAccountCooldown(p.account.id) > 0 || !p.account.is_active}
                 />
               ))}
             </BoardColumn>
@@ -255,6 +277,7 @@ export default function Orders() {
                   onMarkDone={() => markDone(o.id)}
                   onDelete={() => deleteOrder(o.id)}
                   onEdited={fetchOrders}
+                  allAvailableProfiles={allAvailableProfiles}
                 />
               ))}
             </BoardColumn>
@@ -270,6 +293,7 @@ export default function Orders() {
                   onMarkDone={() => markDone(o.id)}
                   onDelete={() => deleteOrder(o.id)}
                   onEdited={fetchOrders}
+                  allAvailableProfiles={allAvailableProfiles}
                 />
               ))}
             </BoardColumn>
@@ -296,7 +320,10 @@ export default function Orders() {
                     <TableCell className="text-muted-foreground text-sm">{i + 1}</TableCell>
                     <TableCell className="font-medium">{p.name}</TableCell>
                     <TableCell>
-                      <div className="text-sm">{p.account.name}</div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="text-sm">{p.account.name}</div>
+                        {!p.account.is_active && <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4">Nonaktif</Badge>}
+                      </div>
                       {p.account.password && <div className="text-xs text-muted-foreground font-mono">{p.account.password}</div>}
                     </TableCell>
                     <TableCell><ProfilePinStatus profile={p} account={p.account} onChanged={fetchOrders} compact /></TableCell>
@@ -304,7 +331,7 @@ export default function Orders() {
                       <div className="flex justify-end items-center gap-1.5">
                         {p.pin_changed_at && <CooldownBadge pinChangedAt={p.pin_changed_at} onExpired={fetchOrders} />}
                         <EditProfileDialog profile={p} onSaved={fetchOrders} size="icon-xs" />
-                        <Button size="sm" onClick={() => setRenting({ accountId: p.account.id, profileId: p.id })} disabled={isInCooldown(p.pin_changed_at) || getAccountCooldown(p.account.id) > 0}>Sewakan</Button>
+                        <Button size="sm" onClick={() => setRenting({ accountId: p.account.id, profileId: p.id })} disabled={getAccountCooldown(p.account.id) > 0 || !p.account.is_active}>Sewakan</Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -343,7 +370,10 @@ export default function Orders() {
                       <span className="font-medium">{o.profiles.name}</span>
                       <ProfilePinStatus profile={o.profiles} account={o.profiles.accounts} onChanged={fetchOrders} compact />
                     </div>
-                    <div className="text-sm text-muted-foreground">{o.profiles.accounts.name.split('@')[0]}</div>
+                    <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                      <span>{o.profiles.accounts.name.split('@')[0]}</span>
+                      {!o.profiles.accounts.is_active && <Badge variant="destructive" className="text-[9px] px-1 py-0 h-3.5">Nonaktif</Badge>}
+                    </div>
                   </TableCell>
                   <TableCell className="font-medium">{o.customer_name}</TableCell>
                   <TableCell>{PACKAGES[o.package]?.label ?? o.package}</TableCell>
@@ -364,6 +394,7 @@ export default function Orders() {
                       onMarkDone={() => markDone(o.id)}
                       onDelete={() => deleteOrder(o.id)}
                       onEdited={fetchOrders}
+                      allAvailableProfiles={allAvailableProfiles}
                     />
                   </TableCell>
                 </TableRow>
@@ -446,8 +477,9 @@ function AvailableProfileCard({ profile, onChanged, onRent, isRentDisabled }: {
     <Card className={cooldown ? 'border-amber-500/20 bg-amber-500/8 dark:bg-amber-500/10' : 'border-emerald-500/20 bg-emerald-500/8 dark:bg-emerald-500/10'}>
       <CardContent className="p-4 space-y-3">
         <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
+          <div className="min-w-0 flex items-center gap-2">
             <p className="font-semibold truncate">{profile.name}</p>
+            {!profile.account.is_active && <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4">Nonaktif</Badge>}
           </div>
           {cooldown && profile.pin_changed_at
             ? <CooldownBadge pinChangedAt={profile.pin_changed_at} onExpired={onChanged} />
@@ -471,28 +503,42 @@ function AvailableProfileCard({ profile, onChanged, onRent, isRentDisabled }: {
         <ProfilePinStatus profile={profile} account={profile.account} onChanged={onChanged} />
         <div className="flex justify-end gap-1 border-t pt-2">
           <EditProfileDialog profile={profile} onSaved={onChanged} size="icon-xs" />
-          <Button size="sm" onClick={onRent} disabled={cooldown || isRentDisabled}>Sewakan</Button>
+          <Button size="sm" onClick={onRent} disabled={isRentDisabled}>Sewakan</Button>
         </div>
       </CardContent>
     </Card>
   )
 }
 
-function OrderCard({ order, today, onExtend, onMarkDone, onDelete, onEdited }: {
+function OrderCard({ order, today, onExtend, onMarkDone, onDelete, onEdited, allAvailableProfiles }: {
   order: OrderWithProfile
   today: string
   onExtend: () => void
   onMarkDone: () => void
   onDelete: () => void
   onEdited: () => void
+  allAvailableProfiles: (Profile & { account: Pick<Account, 'name' | 'id'> })[]
 }) {
+  const cooldown = isInCooldown(order.profiles.pin_changed_at)
+  const isBooked = order.status === 'booked'
+  
+  let cardClass = ''
+  if (isBooked && cooldown) {
+    cardClass = 'border-amber-500/20 bg-amber-500/8 dark:bg-amber-500/10'
+  } else if (isBooked) {
+    cardClass = 'border-primary/20'
+  }
+
   return (
-    <Card className={`overflow-hidden ${order.status === 'booked' ? 'border-primary/20' : ''}`}>
+    <Card className={`overflow-hidden ${cardClass}`}>
       <CardContent className="p-4 space-y-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="text-base font-semibold truncate">{order.customer_name}</p>
-            <p className="text-sm text-muted-foreground truncate">{order.profiles.name} · {order.profiles.accounts.name.split('@')[0]}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-sm text-muted-foreground truncate">{order.profiles.name} · {order.profiles.accounts.name.split('@')[0]}</p>
+              {!order.profiles.accounts.is_active && <Badge variant="destructive" className="text-[9px] px-1 py-0 h-3.5">Nonaktif</Badge>}
+            </div>
           </div>
           <StatusBadge status={order.status} endDate={order.end_date} today={today} />
         </div>
@@ -515,7 +561,7 @@ function OrderCard({ order, today, onExtend, onMarkDone, onDelete, onEdited }: {
         {order.notes && <p className="text-sm text-muted-foreground truncate pt-1 border-t border-border/50">{order.notes}</p>}
 
         <div className="flex items-center justify-end gap-0.5 pt-1 border-t border-border/50">
-          <OrderActions order={order} onExtend={onExtend} onMarkDone={onMarkDone} onDelete={onDelete} onEdited={onEdited} />
+          <OrderActions order={order} onExtend={onExtend} onMarkDone={onMarkDone} onDelete={onDelete} onEdited={onEdited} allAvailableProfiles={allAvailableProfiles} />
         </div>
       </CardContent>
     </Card>
@@ -523,19 +569,79 @@ function OrderCard({ order, today, onExtend, onMarkDone, onDelete, onEdited }: {
 }
 
 function OrderActions({
-  order, onExtend, onMarkDone, onDelete, onEdited,
+  order, onExtend, onMarkDone, onDelete, onEdited, allAvailableProfiles
 }: {
   order: OrderWithProfile
   onExtend: () => void
   onMarkDone: () => void
   onDelete: () => void
   onEdited: () => void
+  allAvailableProfiles: (Profile & { account: Pick<Account, 'name' | 'id'> })[]
 }) {
+  function handleCopyRules() {
+    const text = `🔴 *RULES SEWA NETFLIX PREMIUM (WAJIB BACA)* 🔴
+
+Biar sama-sama enak dan nontonnya nyaman tanpa keganggu, tolong dipatuhi ya Kak:
+* Dilarang keras ganti password, email, atau ubah pengaturan apa pun.
+* Kakak cuma boleh pakai profil yang udah ditentukan. Dilarang keras ngintip, ganti nama, atau otak-atik profil orang lain. 
+* 1 Profil = 1 Device. Slot ini cuma buat 1 device aja.
+* Tolong banget jangan hobi log in - log out sembarangan biar sistem Netflix-nya nggak curiga.
+* Wajib Kirim Bukti Log In (Buat Garansi)! Begitu dikasih detail akun, Kakak wajib isi format device + kirim screenshot bukti udah berhasil masuk dalam waktu 1x24 jam. Kalau lewat dari itu, garansi hangus ya.
+* Kalau pas nonton tiba-tiba muncul tulisan "Bukan bagian dari rumah tangga ini", langsung chat aku buat minta kode verifikasinya. Akun full garansi kok! ✨
+
+⚠️ *SANKSI KALO NEKAT MELANGGAR* ⚠️
+Kalo ketahuan melanggar aturan di atas:
+* Akun bakal langsung di-logout sepihak.
+* Sisa masa sewa kamu HANGUS (No Refund).
+* Wajib bayar DENDA seharga asli paket Netflix Premium.
+
+📌*Detail Akun:*
+Email: ${order.profiles.accounts.name}
+Pass: ${order.profiles.accounts.password || '-'}
+Profile: ${order.profiles.name}
+Pin: ${order.profiles.pin || '-'}
+LOGOUT:  ${formatDate(order.end_date)} (${formatTime(order.logout_time)} WIB) 
+
+Thanks for ordering! 🥰🫶🏻`
+    copyText(text, 'Rules & Akun disalin')
+  }
+
+  function handleCopyProfileChange() {
+    const text = `Halo Kak! 👋
+Mohon maaf mengganggu waktunya. Ada pergantian profil untuk akun Netflix Kakak.
+Berikut adalah detail akun dan profil yang baru:
+
+📌 *Detail Akun Baru:*
+Email: ${order.profiles.accounts.name}
+Pass: ${order.profiles.accounts.password || '-'}
+Profile: ${order.profiles.name}
+Pin: ${order.profiles.pin || '-'}
+LOGOUT:  ${formatDate(order.end_date)} (${formatTime(order.logout_time)} WIB) 
+
+Mohon untuk login menggunakan detail terbaru ini ya Kak. Aturan sewa tetap sama seperti sebelumnya.
+Jika ada kendala saat login, silakan langsung hubungi kami.
+
+Terima kasih! 🥰🫶🏻`
+    copyText(text, 'Info Pindah disalin')
+  }
+
   return (
     <div className="flex items-center justify-end gap-0.5">
+      <div className="flex gap-1 mr-auto">
+        <Button variant="outline" size="sm" onClick={handleCopyRules} className="h-7 px-2.5 text-xs">
+          <Copy className="size-3.5 mr-1.5 text-blue-500" />
+          Rules
+        </Button>
+        <Button variant="outline" size="sm" onClick={handleCopyProfileChange} className="h-7 px-2.5 text-xs" title="Kirim info pindah profil">
+          <Copy className="size-3.5 mr-1.5 text-amber-500" />
+          Pindah
+        </Button>
+      </div>
+      <HistoryDialog order={order} />
       <EditOrderDialog order={order} onSaved={onEdited} />
       {order.status === 'booked' && (
         <>
+          <SwitchProfileDialog order={order} availableProfiles={allAvailableProfiles} onSaved={onEdited} />
           <Button variant="ghost" size="icon-xs" onClick={onExtend} title="Perpanjang">
             <RefreshCw className="size-3.5 text-primary" />
           </Button>

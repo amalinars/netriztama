@@ -186,12 +186,12 @@ export async function getFinancialSettings(): Promise<{ data: FinancialSettings 
   return { data: data as FinancialSettings | null, error: error as Error | null }
 }
 
-export async function updateInitialBalance(initialBalance: number): Promise<{ error: Error | null }> {
+export async function updateInitialBalance(initialBalance: number, cutoffTime?: string | null): Promise<{ error: Error | null }> {
   const existing = await getFinancialSettings()
   if (existing.data?.id) {
-    return (await supabase.from('financial_settings').update({ initial_balance: initialBalance, updated_at: new Date().toISOString() }).eq('id', existing.data.id)) as unknown as Promise<{ error: Error | null }>
+    return (await supabase.from('financial_settings').update({ initial_balance: initialBalance, cutoff_time: cutoffTime, updated_at: new Date().toISOString() }).eq('id', existing.data.id)) as unknown as Promise<{ error: Error | null }>
   } else {
-    return (await supabase.from('financial_settings').insert({ initial_balance: initialBalance })) as unknown as Promise<{ error: Error | null }>
+    return (await supabase.from('financial_settings').insert({ initial_balance: initialBalance, cutoff_time: cutoffTime })) as unknown as Promise<{ error: Error | null }>
   }
 }
 
@@ -217,17 +217,23 @@ export async function settleAllPendingOrders(): Promise<{ error: Error | null }>
   return (supabase as never as { rpc: (name: string) => Promise<{ error: Error | null }> }).rpc('settle_all_pending_orders')
 }
 
-export async function getFinancialsOrdersSummary(): Promise<{
+export async function getFinancialsOrdersSummary(cutoffTime?: string | null): Promise<{
   settledOrdersTotal: number
   unsettledOrdersTotal: number
   unsettledOrders: OrderWithProfile[]
   allOrders: OrderWithProfile[]
   error: Error | null
 }> {
-  const { data, error } = await supabase
+  let query = supabase
     .from('orders')
     .select('*, profiles(*, accounts(*))')
-    .order('created_at', { ascending: false }) as unknown as { data: OrderWithProfile[] | null; error: Error | null }
+    .order('created_at', { ascending: false })
+
+  if (cutoffTime) {
+    query = query.gte('created_at', cutoffTime)
+  }
+
+  const { data, error } = await query as unknown as { data: OrderWithProfile[] | null; error: Error | null }
 
   if (error || !data) {
     return { settledOrdersTotal: 0, unsettledOrdersTotal: 0, unsettledOrders: [], allOrders: [], error }

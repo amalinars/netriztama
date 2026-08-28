@@ -17,8 +17,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Calendar } from '@/components/ui/calendar'
+import { format } from 'date-fns'
+import { cn } from '@/lib/utils'
 import ConfirmDialog from '@/components/ConfirmDialog'
-import { Wallet, TrendingUp, TrendingDown, Clock, Plus, Trash2, CheckCircle2, DollarSign, Calendar } from 'lucide-react'
+import { Wallet, TrendingUp, TrendingDown, Clock, Plus, Trash2, CheckCircle2, DollarSign, Calendar as CalendarIcon } from 'lucide-react'
 
 export default function Financials() {
   const [loading, setLoading] = useState(true)
@@ -33,6 +37,8 @@ export default function Financials() {
   // Modals state
   const [showInitialBalanceDialog, setShowInitialBalanceDialog] = useState(false)
   const [initialBalanceInput, setInitialBalanceInput] = useState('')
+  const [cutoffDate, setCutoffDate] = useState('')
+  const [cutoffTime, setCutoffTime] = useState('')
   const [showExpenseDialog, setShowExpenseDialog] = useState(false)
   const [expenseTitle, setExpenseTitle] = useState('')
   const [expenseAmount, setExpenseAmount] = useState('')
@@ -42,11 +48,13 @@ export default function Financials() {
 
   async function loadData() {
     setLoading(true)
-    const [settingsRes, expensesRes, ordersSummaryRes] = await Promise.all([
+    const [settingsRes, expensesRes] = await Promise.all([
       getFinancialSettings(),
       getExpenses(),
-      getFinancialsOrdersSummary(),
     ])
+
+    const currentSettings = settingsRes.data
+    const ordersSummaryRes = await getFinancialsOrdersSummary(currentSettings?.cutoff_time)
 
     if (settingsRes.data) setSettings(settingsRes.data)
     if (expensesRes.data) setExpenses(expensesRes.data)
@@ -137,7 +145,12 @@ export default function Financials() {
   async function handleSaveInitialBalance(e: React.FormEvent) {
     e.preventDefault()
     const val = parseInt(initialBalanceInput.replace(/\D/g, ''), 10) || 0
-    const { error } = await updateInitialBalance(val)
+    let finalCutoffTime: string | null = null
+    if (cutoffDate) {
+       const timePart = cutoffTime || '00:00'
+       finalCutoffTime = new Date(`${cutoffDate}T${timePart}:00`).toISOString()
+    }
+    const { error } = await updateInitialBalance(val, finalCutoffTime)
     if (error) {
       toast.error('Gagal memperbarui saldo awal')
     } else {
@@ -228,6 +241,14 @@ export default function Financials() {
             variant="outline"
             onClick={() => {
               setInitialBalanceInput(initialBalance.toString())
+              if (settings?.cutoff_time) {
+                 const d = new Date(settings.cutoff_time)
+                 setCutoffDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)
+                 setCutoffTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`)
+              } else {
+                 setCutoffDate('')
+                 setCutoffTime('')
+              }
               setShowInitialBalanceDialog(true)
             }}
           >
@@ -503,7 +524,7 @@ export default function Financials() {
                     return (
                       <tr key={expense.id} className="hover:bg-muted/40 transition-colors">
                         <td className="px-4 py-3 text-muted-foreground flex items-center gap-1.5 whitespace-nowrap">
-                          <Calendar className="size-3.5 text-muted-foreground" />
+                          <CalendarIcon className="size-3.5 text-muted-foreground" />
                           {new Date(expense.expense_date).toLocaleDateString('id-ID', {
                             day: 'numeric',
                             month: 'short',
@@ -570,10 +591,44 @@ export default function Financials() {
                 placeholder="Contoh: 1000000"
                 required
               />
-              <p className="text-xs text-muted-foreground">
-                Nilai ini digunakan sebagai modal awal/posisi saldo dasar wallet kamu.
-              </p>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2 flex flex-col">
+                <Label>Dihitung Sejak (Opsional)</Label>
+                <Popover>
+                  <PopoverTrigger
+                    className={cn(
+                      "flex h-9 w-full items-center justify-start rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 text-left font-normal",
+                      !cutoffDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {cutoffDate ? format(new Date(cutoffDate), "PPP") : <span>Pilih tanggal</span>}
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={cutoffDate ? new Date(cutoffDate) : undefined}
+                      onSelect={(date: Date | undefined) => {
+                        if (date) {
+                          setCutoffDate(format(date, "yyyy-MM-dd"))
+                        } else {
+                          setCutoffDate('')
+                        }
+                      }}
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <div className="space-y-2 flex flex-col">
+                <Label>Jam</Label>
+                <Input type="time" value={cutoffTime} onChange={(e) => setCutoffTime(e.target.value)} />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Nilai ini digunakan sebagai modal awal/posisi saldo dasar wallet kamu. <br />
+              Order yang masuk <b>sebelum</b> tanggal & jam di atas tidak akan dihitung di breakdown dan dianggap sudah masuk ke saldo ini.
+            </p>
             <DialogFooter>
               <DialogClose render={<Button type="button" variant="ghost" />}>Batal</DialogClose>
               <Button type="submit">Simpan Saldo Awal</Button>

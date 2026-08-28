@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import ConfirmDialog from '@/components/ConfirmDialog'
 import ProfilePinStatus from '@/components/ProfilePinStatus'
 import EditProfileDialog from '@/components/EditProfileDialog'
-import { Plus, Trash2, Eye, EyeOff, Pencil, Copy } from 'lucide-react'
+import { Plus, Trash2, Eye, EyeOff, Pencil, Copy, Power, PowerOff, Search } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 type AccountWithProfiles = Account & { profiles: Profile[] }
 
@@ -28,13 +29,37 @@ async function copyText(text: string, label: string) {
 export default function Accounts() {
   const [accounts, setAccounts] = useState<AccountWithProfiles[]>([])
   const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
 
   async function fetchAccounts() {
-    const { data } = await supabase
-      .from('accounts')
-      .select('*, profiles(*)')
-      .order('created_at')
-    setAccounts(data ?? [])
+    const [accRes, ordRes] = await Promise.all([
+      supabase.from('accounts').select('*, profiles(*)').order('created_at'),
+      supabase.from('orders').select('status, end_date, logout_time, profile_id').order('created_at', { ascending: false }),
+    ])
+    
+    const accs = accRes.data ?? []
+    const ords = ordRes.data ?? []
+    
+    const now = Date.now()
+    function deadlineMs(endDate: string, logoutTime?: string | null) {
+      const t = (logoutTime ?? '23:59').slice(0, 5)
+      return new Date(`${endDate}T${t}:00`).getTime()
+    }
+    
+    const bookedProfileIds = new Set<string>()
+    for (const o of ords) {
+      if (o.status === 'booked' && deadlineMs(o.end_date, o.logout_time) > now) {
+        bookedProfileIds.add(o.profile_id)
+      }
+    }
+
+    for (const acc of accs) {
+      for (const p of acc.profiles) {
+        (p as Profile & { isBooked?: boolean }).isBooked = bookedProfileIds.has(p.id)
+      }
+    }
+
+    setAccounts(accs)
     setLoading(false)
   }
 
@@ -42,14 +67,47 @@ export default function Accounts() {
 
   if (loading) return <div className="flex items-center justify-center py-20 text-muted-foreground">Memuat...</div>
 
+  const activeCount = accounts.filter(a => a.is_active).length
+
+  const filteredAndSortedAccounts = accounts
+    .filter(acc => {
+      // Hide inactive accounts if NONE of their profiles are booked
+      if (!acc.is_active) {
+        const hasBooked = acc.profiles.some(p => (p as Profile & { isBooked?: boolean }).isBooked)
+        if (!hasBooked) return false
+      }
+      return acc.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+             acc.profiles.some(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    })
+    .sort((a, b) => {
+      // Aktif di atas, nonaktif di bawah
+      if (a.is_active !== b.is_active) {
+        return a.is_active ? -1 : 1
+      }
+      // Kalau sama-sama aktif/nonaktif, urutkan abjad
+      return a.name.localeCompare(b.name)
+    })
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Akun Netflix</h1>
-          <p className="text-muted-foreground">{accounts.length} akun terdaftar</p>
+          <p className="text-muted-foreground">{accounts.length} total akun ({activeCount} aktif)</p>
         </div>
-        <AddAccountDialog onAdded={fetchAccounts} />
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="relative flex-1 sm:w-64">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Cari email / nama profil..."
+              className="pl-8"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <AddAccountDialog onAdded={fetchAccounts} />
+        </div>
       </div>
       {accounts.length === 0 ? (
         <Card className="border-dashed">
@@ -60,9 +118,14 @@ export default function Accounts() {
         </Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
-          {accounts.map(acc => (
+          {filteredAndSortedAccounts.map(acc => (
             <AccountCard key={acc.id} account={acc} onChanged={fetchAccounts} />
           ))}
+          {filteredAndSortedAccounts.length === 0 && (
+            <div className="col-span-full py-12 text-center text-muted-foreground">
+              Pencarian tidak ditemukan.
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -79,13 +142,23 @@ function AccountCard({ account, onChanged }: { account: AccountWithProfiles; onC
     onChanged()
   }
 
+  async function toggleActive() {
+    const { error } = await supabase.from('accounts').update({ is_active: !account.is_active }).eq('id', account.id)
+    if (error) { toast.error(error.message); return }
+    toast.success(`Akun ${account.is_active ? 'dinonaktifkan' : 'diaktifkan'}`)
+    onChanged()
+  }
+
   return (
-    <Card>
+    <Card className={cn("overflow-hidden transition-all duration-300", !account.is_active && "opacity-80 border-dashed bg-muted/20")}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1">
-              <CardTitle className="truncate text-base">{account.name}</CardTitle>
+            <div className="flex items-center gap-2">
+              <CardTitle className="truncate text-base">
+                {account.name}
+              </CardTitle>
+              {!account.is_active && <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4">Nonaktif</Badge>}
               <Button variant="ghost" size="icon-xs" onClick={() => copyText(account.name, 'Email')} title="Copy email">
                 <Copy className="size-3.5" />
               </Button>
@@ -103,6 +176,9 @@ function AccountCard({ account, onChanged }: { account: AccountWithProfiles; onC
             )}
           </div>
           <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon-sm" onClick={toggleActive} title={account.is_active ? "Nonaktifkan Akun" : "Aktifkan Akun"}>
+              {account.is_active ? <Power className="size-3.5 text-green-500" /> : <PowerOff className="size-3.5 text-muted-foreground" />}
+            </Button>
             <EditAccountDialog account={account} onSaved={onChanged} />
             <ConfirmDialog
               title="Hapus akun?"
@@ -178,7 +254,7 @@ function AddAccountDialog({ onAdded }: { onAdded: () => void }) {
     e.preventDefault()
     if (!name.trim()) return
     setBusy(true)
-    const { error } = await supabase.from('accounts').insert({ name: name.trim(), password: password || null, subscription_cost: Number(cost) || 0 })
+    const { error } = await supabase.from('accounts').insert({ name: name.trim(), password: password || null, subscription_cost: Number(cost) || 0, is_active: true })
     setBusy(false)
     if (error) { toast.error(error.message); return }
     toast.success('Akun ditambahkan')
@@ -222,6 +298,7 @@ function EditAccountDialog({ account, onSaved }: { account: Account; onSaved: ()
   const [name, setName] = useState(account.name)
   const [password, setPassword] = useState(account.password ?? '')
   const [cost, setCost] = useState(String(account.subscription_cost))
+  const [isActive, setIsActive] = useState(account.is_active ?? true)
   const [busy, setBusy] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
@@ -231,6 +308,7 @@ function EditAccountDialog({ account, onSaved }: { account: Account; onSaved: ()
       name: name.trim(),
       password: password || null,
       subscription_cost: Number(cost) || 0,
+      is_active: isActive,
     }).eq('id', account.id)
     setBusy(false)
     if (error) { toast.error(error.message); return }
@@ -259,6 +337,10 @@ function EditAccountDialog({ account, onSaved }: { account: Account; onSaved: ()
             <Label>Biaya Langganan / Bulan</Label>
             <Input type="number" value={cost} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCost(e.target.value)} />
           </div>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)} className="accent-primary size-4" />
+            <span>Akun Aktif (centang jika langganan masih jalan)</span>
+          </label>
           <DialogFooter>
             <DialogClose render={<Button variant="outline" />}>Batal</DialogClose>
             <Button type="submit" disabled={busy}>Simpan</Button>

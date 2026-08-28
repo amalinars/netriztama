@@ -118,7 +118,7 @@ export default function Dashboard() {
 
   const countdown = useCountdown()
 
-  const pendingPins = accounts.flatMap(a => a.profiles.filter(p => p.pin_change_pending).map(p => ({ ...p, accountName: a.name })))
+  const pendingPins = accounts.filter(a => a.is_active).flatMap(a => a.profiles.filter(p => p.pin_change_pending).map(p => ({ ...p, accountName: a.name })))
 
   if (loading) return <div className="flex items-center justify-center py-20 text-muted-foreground">Memuat...</div>
 
@@ -161,9 +161,10 @@ export default function Dashboard() {
         <Button variant={selectedAccount === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setSelectedAccount('all')}>
           Semua Akun
         </Button>
-        {accounts.map(acc => (
-          <Button key={acc.id} variant={selectedAccount === acc.id ? 'default' : 'outline'} size="sm" onClick={() => setSelectedAccount(acc.id)} className="truncate max-w-48">
+        {accounts.filter(acc => acc.is_active || acc.profiles.some(p => (p as Profile & { currentOrder?: Order }).currentOrder)).map(acc => (
+          <Button key={acc.id} variant={selectedAccount === acc.id ? 'default' : 'outline'} size="sm" onClick={() => setSelectedAccount(acc.id)} className="truncate max-w-48 flex items-center gap-1.5">
             {acc.name.split('@')[0]}
+            {!acc.is_active && <span className="text-[10px] opacity-60 font-normal uppercase tracking-wider">(Nonaktif)</span>}
           </Button>
         ))}
       </div>
@@ -184,12 +185,15 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2">
-            {filteredAccounts.map(acc => (
-              <Card key={acc.id}>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base font-medium truncate">{acc.name}</CardTitle>
-                </CardHeader>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {filteredAccounts.filter(acc => acc.is_active || acc.profiles.some(p => (p as Profile & { currentOrder?: Order }).currentOrder)).map(acc => (
+                <Card key={acc.id} className={!acc.is_active ? 'opacity-80 border-dashed bg-muted/20' : ''}>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base font-medium truncate flex items-center gap-2">
+                      {acc.name}
+                      {!acc.is_active && <Badge variant="secondary" className="text-[10px] h-5 bg-destructive/10 text-destructive border-transparent">Nonaktif</Badge>}
+                    </CardTitle>
+                  </CardHeader>
                 <CardContent className="space-y-2">
                   {acc.profiles.filter(p => p.is_rentable).map(p => {
                     const order = (p as Profile & { currentOrder?: Order }).currentOrder

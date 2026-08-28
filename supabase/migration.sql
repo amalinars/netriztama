@@ -13,6 +13,7 @@ create table netflix.accounts (
   name text not null,
   password text,
   subscription_cost integer not null default 0,
+  is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
 
@@ -38,6 +39,7 @@ create table netflix.orders (
   logout_time time not null default '23:59',
   status text not null default 'booked' check (status in ('booked', 'done')),
   notes text,
+  migration_history jsonb default '[]'::jsonb,
   created_at timestamptz not null default now()
 );
 

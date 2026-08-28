@@ -3,6 +3,7 @@ export type Account = {
   name: string
   password: string | null
   subscription_cost: number
+  is_active: boolean
   created_at: string
 }
 
@@ -19,7 +20,14 @@ export type Profile = {
 }
 
 export type ProfileWithAccount = Profile & {
-  accounts: Pick<Account, 'id' | 'name'> & { password?: string | null }
+  accounts: Pick<Account, 'id' | 'name' | 'is_active'> & { password?: string | null }
+}
+
+export type OrderMigration = {
+  moved_at: string
+  from_profile_id: string
+  from_profile_name: string
+  from_account_name: string
 }
 
 export type Order = {
@@ -34,12 +42,14 @@ export type Order = {
   status: 'booked' | 'done'
   is_settled: boolean
   notes: string | null
+  migration_history?: OrderMigration[] | null
   created_at: string
 }
 
 export type FinancialSettings = {
   id: string
   initial_balance: number
+  cutoff_time?: string | null
   updated_at: string
 }
 
