@@ -263,4 +263,55 @@ export async function settleSelectedOrders(orderIds: string[]): Promise<{ error:
     .in('id', orderIds)) as unknown as Promise<{ error: Error | null }>
 }
 
+export async function getCycleOrdersSummary(
+  cycleStartTime: string,
+  cycleEndTime?: string
+): Promise<{
+  totalRevenue: number
+  settledRevenue: number
+  unsettledRevenue: number
+  ordersCount: number
+  error: Error | null
+}> {
+  let query = supabase
+    .from('orders')
+    .select('id, price, is_settled, created_at')
+    .gte('created_at', cycleStartTime)
+
+  if (cycleEndTime) {
+    query = query.lt('created_at', cycleEndTime)
+  }
+
+  const { data, error } = (await query) as unknown as {
+    data: { id: string; price: number; is_settled: boolean; created_at: string }[] | null
+    error: Error | null
+  }
+
+  if (error || !data) {
+    return { totalRevenue: 0, settledRevenue: 0, unsettledRevenue: 0, ordersCount: 0, error }
+  }
+
+  let totalRevenue = 0
+  let settledRevenue = 0
+  let unsettledRevenue = 0
+
+  for (const order of data) {
+    totalRevenue += order.price
+    if (order.is_settled) {
+      settledRevenue += order.price
+    } else {
+      unsettledRevenue += order.price
+    }
+  }
+
+  return {
+    totalRevenue,
+    settledRevenue,
+    unsettledRevenue,
+    ordersCount: data.length,
+    error: null,
+  }
+}
+
+
 

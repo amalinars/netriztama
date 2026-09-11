@@ -8,8 +8,9 @@ import {
   getFinancialsOrdersSummary,
   settleAllPendingOrders,
   settleSelectedOrders,
+  getCycleOrdersSummary,
 } from '@/lib/supabase'
-import { formatRupiah } from '@/lib/constants'
+import { formatRupiah, getMonthlyCycleRange } from '@/lib/constants'
 import type { FinancialSettings, Expense, OrderWithProfile } from '@/types/database'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -22,7 +23,7 @@ import { Calendar } from '@/components/ui/calendar'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
 import ConfirmDialog from '@/components/ConfirmDialog'
-import { Wallet, TrendingUp, TrendingDown, Clock, Plus, Trash2, CheckCircle2, DollarSign, Calendar as CalendarIcon } from 'lucide-react'
+import { Wallet, TrendingUp, TrendingDown, Clock, Plus, Trash2, CheckCircle2, DollarSign, Calendar as CalendarIcon, CalendarRange } from 'lucide-react'
 
 export default function Financials() {
   const [loading, setLoading] = useState(true)
@@ -33,6 +34,13 @@ export default function Financials() {
   const [unsettledOrders, setUnsettledOrders] = useState<OrderWithProfile[]>([])
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([])
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null)
+
+  // Cutoff cycle revenue state (27th - now)
+  const [cycleRevenue, setCycleRevenue] = useState(0)
+  const [cycleSettledRevenue, setCycleSettledRevenue] = useState(0)
+  const [cycleUnsettledRevenue, setCycleUnsettledRevenue] = useState(0)
+  const [cycleOrdersCount, setCycleOrdersCount] = useState(0)
+  const [cycleRangeLabel, setCycleRangeLabel] = useState('')
 
   // Modals state
   const [showInitialBalanceDialog, setShowInitialBalanceDialog] = useState(false)
@@ -48,9 +56,13 @@ export default function Financials() {
 
   async function loadData() {
     setLoading(true)
-    const [settingsRes, expensesRes] = await Promise.all([
+    const cycleRange = getMonthlyCycleRange()
+    setCycleRangeLabel(cycleRange.label)
+
+    const [settingsRes, expensesRes, cycleSummaryRes] = await Promise.all([
       getFinancialSettings(),
       getExpenses(),
+      getCycleOrdersSummary(cycleRange.start.toISOString(), cycleRange.end.toISOString()),
     ])
 
     const currentSettings = settingsRes.data
@@ -65,6 +77,11 @@ export default function Financials() {
     setSelectedOrderIds([])
     setLastSelectedIndex(null)
 
+    setCycleRevenue(cycleSummaryRes.totalRevenue)
+    setCycleSettledRevenue(cycleSummaryRes.settledRevenue)
+    setCycleUnsettledRevenue(cycleSummaryRes.unsettledRevenue)
+    setCycleOrdersCount(cycleSummaryRes.ordersCount)
+
     setLoading(false)
   }
 
@@ -77,9 +94,9 @@ export default function Financials() {
   const actualRevenue = initialBalance + settledOrdersTotal - expensesTotal
   const expectedRevenue = actualRevenue + unsettledOrdersTotal
 
-  const expenseShortfall = expensesTotal - unsettledOrdersTotal
+  const expenseShortfall = expensesTotal - cycleRevenue
 
-  // FIFO Waterfall Payoff calculation for Expenses using pending order revenue pool
+  // FIFO Waterfall Payoff calculation for Expenses using cycle revenue pool
   const waterfallExpensesMap = new Map<string, { allocated: number; remainingNeeded: number; isCovered: boolean }>()
   {
     const sorted = [...expenses].sort((a, b) => {
@@ -89,7 +106,7 @@ export default function Financials() {
       return new Date(a.created_at || '').getTime() - new Date(b.created_at || '').getTime()
     })
 
-    let currentPool = unsettledOrdersTotal
+    let currentPool = cycleRevenue
 
     for (const expense of sorted) {
       const needed = expense.amount
@@ -263,7 +280,7 @@ export default function Financials() {
       </div>
 
       {/* Summary Cards Grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {/* Card 1: Saldo Kas Utama */}
         <Card className="relative overflow-hidden border-primary/30 bg-primary/5 shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -291,6 +308,27 @@ export default function Financials() {
           </CardContent>
         </Card>
 
+        {/* Card 2: Pendapatan Bulan Ini (Siklus Cutoff 27) */}
+        <Card className="relative overflow-hidden border-sky-500/30 bg-sky-500/5 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-semibold">Pendapatan Bulan Ini</CardTitle>
+            <CalendarRange className="size-4 text-sky-500" />
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="text-2xl font-bold tracking-tight text-sky-500 dark:text-sky-400">
+              {formatRupiah(cycleRevenue)}
+            </div>
+            <p className="text-xs text-muted-foreground leading-snug">
+              Total omset order periode <span className="font-medium text-foreground">{cycleRangeLabel}</span> (cutoff tgl 27).
+            </p>
+            <div className="pt-1">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
+                📦 {cycleOrdersCount} Order ({formatRupiah(cycleSettledRevenue)} disetor{cycleUnsettledRevenue > 0 ? ` • ${formatRupiah(cycleUnsettledRevenue)} pending` : ''})
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Card 2: Biaya & Modal Keluar */}
         <Card className="shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -307,11 +345,11 @@ export default function Financials() {
             <div className="pt-1">
               {expenseShortfall > 0 ? (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
-                  🔴 Kurang {formatRupiah(expenseShortfall)} lagi untuk menutup pengeluaran
+                  🔴 Kurang {formatRupiah(expenseShortfall)} lagi untuk menutup modal
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                  🟢 Plus {formatRupiah(Math.abs(expenseShortfall))}
+                  🟢 Modal Tertutupi (+{formatRupiah(Math.abs(expenseShortfall))} laba)
                 </span>
               )}
             </div>
@@ -510,7 +548,7 @@ export default function Financials() {
                     <th className="px-4 py-3">Pengeluaran</th>
                     <th className="px-4 py-3">Kategori</th>
                     <th className="px-4 py-3 text-right">Nominal</th>
-                    <th className="px-4 py-3 text-center">Status Penutupan (Omset Pending)</th>
+                    <th className="px-4 py-3 text-center">Status Penutupan Modal (Omset Siklus)</th>
                     <th className="px-4 py-3 text-right">Aksi</th>
                   </tr>
                 </thead>
@@ -544,6 +582,10 @@ export default function Financials() {
                           {status.isCovered ? (
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                               🟢 Tertutupi (Lunas)
+                            </span>
+                          ) : status.allocated > 0 ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                              🟡 Kurang {formatRupiah(status.remainingNeeded)} lagi ({formatRupiah(status.allocated)} tercover)
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
