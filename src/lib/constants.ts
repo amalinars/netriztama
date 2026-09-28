@@ -110,3 +110,38 @@ export function getMonthlyCycleRange(target: Date | string = new Date(), cutoffD
   }
 }
 
+export interface MonthlyCycleOption {
+  key: string
+  start: Date
+  end: Date
+  label: string
+  cycleFullLabel: string
+  isCurrent: boolean
+}
+
+export function getAvailableMonthlyCycles(now = new Date(), cutoffDay = FINANCIAL_CUTOFF_DAY, count = 8): MonthlyCycleOption[] {
+  const current = getMonthlyCycleRange(now, cutoffDay)
+  const cycles: MonthlyCycleOption[] = []
+
+  for (let i = 0; i < count; i++) {
+    const refDate = new Date(current.start)
+    refDate.setMonth(refDate.getMonth() - i)
+    refDate.setDate(refDate.getDate() + 2)
+
+    const cycle = getMonthlyCycleRange(refDate, cutoffDay)
+    if (!cycles.some((c) => c.key === cycle.cycleKey)) {
+      cycles.push({
+        key: cycle.cycleKey,
+        start: cycle.start,
+        end: cycle.end,
+        label: i === 0 ? `${cycle.label} (Siklus Aktif)` : cycle.cycleFullLabel,
+        cycleFullLabel: cycle.cycleFullLabel,
+        isCurrent: i === 0,
+      })
+    }
+  }
+
+  return cycles
+}
+
+
