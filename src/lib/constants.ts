@@ -18,6 +18,49 @@ export function calculateEndDate(startDate: string, pkg: PackageType): string {
   return date.toISOString().split('T')[0]
 }
 
+export function calculateDynamicExpiry(pkg: PackageType, fromDate = new Date()) {
+  const days = PACKAGES[pkg]?.days ?? 1
+  const expiryDate = new Date(fromDate.getTime() + days * 24 * 60 * 60 * 1000)
+
+  const year = expiryDate.getFullYear()
+  const month = String(expiryDate.getMonth() + 1).padStart(2, '0')
+  const day = String(expiryDate.getDate()).padStart(2, '0')
+  const endDate = `${year}-${month}-${day}`
+
+  const hours = String(expiryDate.getHours()).padStart(2, '0')
+  const minutes = String(expiryDate.getMinutes()).padStart(2, '0')
+  const seconds = String(expiryDate.getSeconds()).padStart(2, '0')
+  const logoutTime = `${hours}:${minutes}:${seconds}`
+  const displayTime = `${hours}:${minutes}`
+  const displayTimeWithSeconds = `${hours}:${minutes}:${seconds}`
+
+  const formattedDate = expiryDate.toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
+
+  return {
+    endDate,
+    logoutTime,
+    displayTime,
+    displayTimeWithSeconds,
+    formattedDate,
+    fullDisplay: `${formattedDate} (${displayTime} WIB)`,
+    fullDisplayWithSeconds: `${formattedDate} (${displayTimeWithSeconds} WIB)`,
+    expiryDate,
+  }
+}
+
+export function calculateExtensionExpiry(currentExpiry: Date | string | number, pkg: PackageType) {
+  const expiryMs = typeof currentExpiry === 'number'
+    ? currentExpiry
+    : new Date(currentExpiry).getTime()
+  const nowMs = Date.now()
+  const baseTime = !isNaN(expiryMs) && expiryMs > nowMs ? new Date(expiryMs) : new Date(nowMs)
+  return calculateDynamicExpiry(pkg, baseTime)
+}
+
 export const FINANCIAL_CUTOFF_DAY = 27
 
 export function getMonthlyCycleRange(now = new Date(), cutoffDay = FINANCIAL_CUTOFF_DAY) {

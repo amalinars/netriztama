@@ -8,6 +8,8 @@ import Testimonials from '@/pages/Testimonials'
 import SelfService from '@/pages/SelfService'
 import AdminTestimonials from '@/pages/AdminTestimonials'
 import Financials from '@/pages/Financials'
+import OrdersAnalyzer from '@/pages/OrdersAnalyzer'
+import Checkout from '@/pages/Checkout'
 
 export default function App() {
   return (
@@ -16,7 +18,8 @@ export default function App() {
         <Route path="/testimonials" element={<Testimonials />} />
         <Route path="/self-service" element={<SelfService />} />
         <Route path="/" element={<Navigate to="/admin" replace />} />
-        <Route path="/orders" element={<Navigate to="/admin/orders" replace />} />
+        <Route path="/orders" element={<OrdersAnalyzer />} />
+        <Route path="/checkout" element={<Checkout />} />
         <Route path="/accounts" element={<Navigate to="/admin/accounts" replace />} />
         <Route path="/logs" element={<Navigate to="/admin/logs" replace />} />
         <Route path="/admin" element={<Layout />}>

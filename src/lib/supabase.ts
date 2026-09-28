@@ -67,12 +67,18 @@ export function createTestimonial(input: CreateTestimonialInput) {
 }
 
 function deadlineMs(endDate: string, logoutTime?: string | null) {
-  return new Date(`${endDate}T${(logoutTime ?? '23:59').slice(0, 5)}:00`).getTime()
+  const time = logoutTime ? (logoutTime.length === 5 ? `${logoutTime}:00` : logoutTime) : '23:59:59'
+  return new Date(`${endDate}T${time}`).getTime()
 }
 
 export async function getPublicProfileAvailability(): Promise<{ data: PublicProfileAvailability[] | null; error: Error | null }> {
   const [profilesRes, ordersRes] = await Promise.all([
-    supabase.from('profiles').select('id, name, is_rentable').eq('is_rentable', true).order('name'),
+    supabase
+      .from('profiles')
+      .select('id, name, is_rentable, accounts!inner(is_active)')
+      .eq('is_rentable', true)
+      .eq('accounts.is_active', true)
+      .order('name'),
     supabase.from('orders').select('profile_id, end_date, logout_time').eq('status', 'booked'),
   ]) as [
     { data: Pick<Profile, 'id' | 'name' | 'is_rentable'>[] | null; error: Error | null },

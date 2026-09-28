@@ -10,4 +10,13 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  server: {
+    proxy: {
+      '/api-9router': {
+        target: 'https://9router.riztama.my.id',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api-9router/, ''),
+      },
+    },
+  },
 })
