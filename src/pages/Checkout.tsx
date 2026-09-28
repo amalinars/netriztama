@@ -400,7 +400,7 @@ export default function Checkout() {
 
   // Countdown timer for our current reservation lock
   const myLock = profile ? getLock(profile.id) : undefined
-  const remainingLockMs = myLock && isLockedByMe(profile.id) ? Math.max(0, myLock.expiresAt - now) : 0
+  const remainingLockMs = myLock && profile && isLockedByMe(profile.id) ? Math.max(0, myLock.expiresAt - now) : 0
   const reservationMinutes = Math.floor(remainingLockMs / 60000)
   const reservationSeconds = Math.floor((remainingLockMs % 60000) / 1000)
   const reservationCountdownStr = `${reservationMinutes}:${reservationSeconds < 10 ? `0${reservationSeconds}` : reservationSeconds}`

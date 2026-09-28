@@ -9,6 +9,7 @@ import {
   settleAllPendingOrders,
   settleSelectedOrders,
   getCycleOrdersSummary,
+  getAllOrdersForFinancials,
 } from '@/lib/supabase'
 import { formatRupiah, getMonthlyCycleRange } from '@/lib/constants'
 import type { FinancialSettings, Expense, OrderWithProfile } from '@/types/database'
@@ -29,6 +30,7 @@ export default function Financials() {
   const [loading, setLoading] = useState(true)
   const [settings, setSettings] = useState<FinancialSettings | null>(null)
   const [expenses, setExpenses] = useState<Expense[]>([])
+  const [allOrders, setAllOrders] = useState<{ id: string; price: number; is_settled: boolean; created_at: string }[]>([])
   const [settledOrdersTotal, setSettledOrdersTotal] = useState(0)
   const [unsettledOrdersTotal, setUnsettledOrdersTotal] = useState(0)
   const [unsettledOrders, setUnsettledOrders] = useState<OrderWithProfile[]>([])
@@ -59,10 +61,11 @@ export default function Financials() {
     const cycleRange = getMonthlyCycleRange()
     setCycleRangeLabel(cycleRange.label)
 
-    const [settingsRes, expensesRes, cycleSummaryRes] = await Promise.all([
+    const [settingsRes, expensesRes, cycleSummaryRes, allOrdersRes] = await Promise.all([
       getFinancialSettings(),
       getExpenses(),
       getCycleOrdersSummary(cycleRange.start.toISOString(), cycleRange.end.toISOString()),
+      getAllOrdersForFinancials(),
     ])
 
     const currentSettings = settingsRes.data
@@ -70,6 +73,7 @@ export default function Financials() {
 
     if (settingsRes.data) setSettings(settingsRes.data)
     if (expensesRes.data) setExpenses(expensesRes.data)
+    if (allOrdersRes.data) setAllOrders(allOrdersRes.data)
     
     setSettledOrdersTotal(ordersSummaryRes.settledOrdersTotal)
     setUnsettledOrdersTotal(ordersSummaryRes.unsettledOrdersTotal)
@@ -94,32 +98,67 @@ export default function Financials() {
   const actualRevenue = initialBalance + settledOrdersTotal - expensesTotal
   const expectedRevenue = actualRevenue + unsettledOrdersTotal
 
-  const expenseShortfall = expensesTotal - cycleRevenue
+  // Current active monthly cycle calculation
+  const currentCycle = getMonthlyCycleRange(new Date())
 
-  // FIFO Waterfall Payoff calculation for Expenses using cycle revenue pool
-  const waterfallExpensesMap = new Map<string, { allocated: number; remainingNeeded: number; isCovered: boolean }>()
+  // Calculate revenue pool for every monthly cutoff cycle from all orders
+  const cycleRevenueMap = new Map<string, number>()
+  for (const order of allOrders) {
+    const oCycle = getMonthlyCycleRange(order.created_at)
+    cycleRevenueMap.set(oCycle.cycleKey, (cycleRevenueMap.get(oCycle.cycleKey) || 0) + order.price)
+  }
+
+  // Filter expenses that belong strictly to the current active cycle (e.g. 27 Sep - 27 Okt)
+  const currentCycleExpenses = expenses.filter((e) => {
+    const expCycle = getMonthlyCycleRange(e.expense_date)
+    return expCycle.cycleKey === currentCycle.cycleKey
+  })
+  const currentCycleExpensesTotal = currentCycleExpenses.reduce((acc, curr) => acc + curr.amount, 0)
+  const currentCycleShortfall = currentCycleExpensesTotal - cycleRevenue
+
+  // FIFO Waterfall Payoff calculation for Expenses strictly within each expense's own cycle
+  const waterfallExpensesMap = new Map<
+    string,
+    { allocated: number; remainingNeeded: number; isCovered: boolean; cycleLabel: string }
+  >()
   {
-    const sorted = [...expenses].sort((a, b) => {
-      const d1 = new Date(a.expense_date).getTime()
-      const d2 = new Date(b.expense_date).getTime()
-      if (d1 !== d2) return d1 - d2
-      return new Date(a.created_at || '').getTime() - new Date(b.created_at || '').getTime()
-    })
+    // Group all expenses by their cycleKey
+    const expensesByCycle = new Map<string, Expense[]>()
+    for (const expense of expenses) {
+      const expCycle = getMonthlyCycleRange(expense.expense_date)
+      if (!expensesByCycle.has(expCycle.cycleKey)) {
+        expensesByCycle.set(expCycle.cycleKey, [])
+      }
+      expensesByCycle.get(expCycle.cycleKey)!.push(expense)
+    }
 
-    let currentPool = cycleRevenue
+    // For each cycle, evaluate payoff using THAT cycle's revenue pool
+    for (const [cycleKey, cycleExpensesList] of expensesByCycle.entries()) {
+      let pool = cycleRevenueMap.get(cycleKey) || 0
 
-    for (const expense of sorted) {
-      const needed = expense.amount
-      const allocated = Math.max(0, Math.min(currentPool, needed))
-      currentPool -= allocated
-      const remainingNeeded = needed - allocated
-      const isCovered = remainingNeeded <= 0
-
-      waterfallExpensesMap.set(expense.id, {
-        allocated,
-        remainingNeeded,
-        isCovered,
+      // Sort expenses in this cycle chronologically
+      const sorted = [...cycleExpensesList].sort((a, b) => {
+        const d1 = new Date(a.expense_date).getTime()
+        const d2 = new Date(b.expense_date).getTime()
+        if (d1 !== d2) return d1 - d2
+        return new Date(a.created_at || '').getTime() - new Date(b.created_at || '').getTime()
       })
+
+      for (const expense of sorted) {
+        const expCycle = getMonthlyCycleRange(expense.expense_date)
+        const needed = expense.amount
+        const allocated = Math.max(0, Math.min(pool, needed))
+        pool -= allocated
+        const remainingNeeded = needed - allocated
+        const isCovered = remainingNeeded <= 0
+
+        waterfallExpensesMap.set(expense.id, {
+          allocated,
+          remainingNeeded,
+          isCovered,
+          cycleLabel: expCycle.cycleFullLabel,
+        })
+      }
     }
   }
 
@@ -329,27 +368,31 @@ export default function Financials() {
           </CardContent>
         </Card>
 
-        {/* Card 2: Biaya & Modal Keluar */}
+        {/* Card 3: Biaya & Modal Keluar Siklus Ini */}
         <Card className="shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-semibold">Total Modal & Biaya</CardTitle>
+            <CardTitle className="text-sm font-semibold">Modal Siklus Ini</CardTitle>
             <TrendingDown className="size-4 text-rose-500" />
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="text-2xl font-bold tracking-tight text-rose-600 dark:text-rose-400">
-              {formatRupiah(expensesTotal)}
+              {formatRupiah(currentCycleExpensesTotal)}
             </div>
             <p className="text-xs text-muted-foreground leading-snug">
-              Total semua uang yang sudah Anda keluarkan untuk beli modal / langganan.
+              Modal operasional periode <span className="font-medium text-foreground">{cycleRangeLabel}</span>. (Total seluruh modal: {formatRupiah(expensesTotal)})
             </p>
             <div className="pt-1">
-              {expenseShortfall > 0 ? (
+              {currentCycleExpensesTotal === 0 ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                  🟢 Belum ada modal di siklus ini (+{formatRupiah(cycleRevenue)} omset berjalan)
+                </span>
+              ) : currentCycleShortfall > 0 ? (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
-                  🔴 Kurang {formatRupiah(expenseShortfall)} lagi untuk menutup modal
+                  🔴 Kurang {formatRupiah(currentCycleShortfall)} lagi untuk menutup modal siklus
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                  🟢 Modal Tertutupi (+{formatRupiah(Math.abs(expenseShortfall))} laba)
+                  🟢 Modal Siklus Tertutupi (+{formatRupiah(Math.abs(currentCycleShortfall))} laba siklus)
                 </span>
               )}
             </div>
@@ -558,6 +601,7 @@ export default function Financials() {
                       allocated: 0,
                       remainingNeeded: expense.amount,
                       isCovered: false,
+                      cycleLabel: getMonthlyCycleRange(expense.expense_date).cycleFullLabel,
                     }
                     return (
                       <tr key={expense.id} className="hover:bg-muted/40 transition-colors">
@@ -579,19 +623,24 @@ export default function Financials() {
                           {formatRupiah(expense.amount)}
                         </td>
                         <td className="px-4 py-3 text-center">
-                          {status.isCovered ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                              🟢 Tertutupi (Lunas)
+                          <div className="flex flex-col items-center gap-1">
+                            {status.isCovered ? (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                                🟢 Tertutupi (Lunas)
+                              </span>
+                            ) : status.allocated > 0 ? (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                                🟡 Kurang {formatRupiah(status.remainingNeeded)} lagi ({formatRupiah(status.allocated)} tercover)
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                                🔴 Kurang {formatRupiah(status.remainingNeeded)} lagi
+                              </span>
+                            )}
+                            <span className="text-[11px] text-muted-foreground">
+                              Siklus: {status.cycleLabel || getMonthlyCycleRange(expense.expense_date).cycleFullLabel}
                             </span>
-                          ) : status.allocated > 0 ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                              🟡 Kurang {formatRupiah(status.remainingNeeded)} lagi ({formatRupiah(status.allocated)} tercover)
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
-                              🔴 Kurang {formatRupiah(status.remainingNeeded)} lagi
-                            </span>
-                          )}
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-right">
                           <ConfirmDialog

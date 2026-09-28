@@ -63,10 +63,23 @@ export function calculateExtensionExpiry(currentExpiry: Date | string | number, 
 
 export const FINANCIAL_CUTOFF_DAY = 27
 
-export function getMonthlyCycleRange(now = new Date(), cutoffDay = FINANCIAL_CUTOFF_DAY) {
-  const currentYear = now.getFullYear()
-  const currentMonth = now.getMonth()
-  const currentDate = now.getDate()
+export function getMonthlyCycleRange(target: Date | string = new Date(), cutoffDay = FINANCIAL_CUTOFF_DAY) {
+  let dateObj: Date
+  if (typeof target === 'string') {
+    const cleanStr = target.split('T')[0]
+    if (/^\d{4}-\d{2}-\d{2}$/.test(cleanStr)) {
+      const parts = cleanStr.split('-').map(Number)
+      dateObj = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0)
+    } else {
+      dateObj = new Date(target)
+    }
+  } else {
+    dateObj = target
+  }
+
+  const currentYear = dateObj.getFullYear()
+  const currentMonth = dateObj.getMonth()
+  const currentDate = dateObj.getDate()
 
   let startYear = currentYear
   let startMonth = currentMonth
@@ -86,10 +99,12 @@ export function getMonthlyCycleRange(now = new Date(), cutoffDay = FINANCIAL_CUT
 
   const startFormatted = start.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
   const endFormatted = end.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
+  const cycleKey = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(cutoffDay).padStart(2, '0')}`
 
   return {
     start,
     end,
+    cycleKey,
     label: `${startFormatted} - Sekarang`,
     cycleFullLabel: `${startFormatted} - ${endFormatted}`,
   }

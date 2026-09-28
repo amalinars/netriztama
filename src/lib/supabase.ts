@@ -319,5 +319,17 @@ export async function getCycleOrdersSummary(
   }
 }
 
+export async function getAllOrdersForFinancials(): Promise<{
+  data: { id: string; price: number; is_settled: boolean; created_at: string }[] | null
+  error: Error | null
+}> {
+  const { data, error } = await supabase
+    .from('orders')
+    .select('id, price, is_settled, created_at')
+    .order('created_at', { ascending: false })
+
+  return { data: data as unknown as { id: string; price: number; is_settled: boolean; created_at: string }[] | null, error }
+}
+
 
 
