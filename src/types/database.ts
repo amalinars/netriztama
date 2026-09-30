@@ -42,6 +42,10 @@ export type Order = {
   status: 'booked' | 'done'
   is_settled: boolean
   notes: string | null
+  /** URL bukti transfer terbaru (disimpan di Cloudinary). */
+  receipt_url?: string | null
+  /** Semua URL bukti transfer order ini (riwayat saat perpanjangan). */
+  receipt_urls?: string[] | null
   migration_history?: OrderMigration[] | null
   created_at: string
 }

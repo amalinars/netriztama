@@ -34,6 +34,7 @@ import { Badge } from '@/components/ui/badge'
 import { supabase } from '@/lib/supabase'
 import { PACKAGES, formatRupiah, calculateDynamicExpiry, calculateExtensionExpiry } from '@/lib/constants'
 import { analyzeImageWith9Router } from '@/lib/ninerouter'
+import { uploadReceiptImage, appendReceiptUrl } from '@/lib/receiptUpload'
 import { useCheckoutLocks } from '@/lib/checkoutLock'
 import type { PackageType } from '@/types/database'
 
@@ -130,6 +131,12 @@ export default function Checkout() {
   const [dragActive, setDragActive] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [verificationResult, setVerificationResult] = useState<ReceiptVerificationData | null>(null)
+
+  // Bukti transfer yang sudah tersimpan permanen di server (Cloudinary).
+  // receiptImage = preview lokal (dataURL), receiptUrl = URL penyimpanan.
+  const [receiptUrl, setReceiptUrl] = useState<string>('')
+  const [receiptUploading, setReceiptUploading] = useState(false)
+  const [receiptUploadError, setReceiptUploadError] = useState<string>('')
 
   // Submitting order
   const [submittingOrder, setSubmittingOrder] = useState(false)
@@ -529,6 +536,38 @@ KEMBALIKAN HANYA JSON MURNI TANPA MARKDOWN BACKTICKS (NO \`\`\`json) DENGAN STRU
   )
 
   // Handle receipt image upload & auto-trigger verification
+  // === Simpan bukti transfer ke server (Cloudinary) ===
+  // Dijalankan otomatis begitu user pilih file, PARALEL dengan verifikasi AI,
+  // supaya tombol order tidak ikut menunggu upload.
+  const persistReceiptToServer = useCallback(async (dataUrl: string) => {
+    setReceiptUploading(true)
+    setReceiptUploadError('')
+    try {
+      const url = await uploadReceiptImage(dataUrl)
+      setReceiptUrl(url)
+      return url
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setReceiptUploadError(msg)
+      toast.error(`Bukti transfer gagal disimpan ke server: ${msg}`)
+      return ''
+    } finally {
+      setReceiptUploading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!receiptImage) {
+      setReceiptUrl('')
+      setReceiptUploadError('')
+      return
+    }
+    // Kalau sudah tersimpan (atau memang sudah berupa URL http), tidak perlu upload lagi.
+    if (receiptUrl && (receiptUrl.startsWith('http') || receiptUrl === receiptImage)) return
+    void persistReceiptToServer(receiptImage)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [receiptImage])
+
   const handleProcessReceipt = useCallback(
     (file: File) => {
       if (!file.type.startsWith('image/')) {
@@ -583,6 +622,10 @@ KEMBALIKAN HANYA JSON MURNI TANPA MARKDOWN BACKTICKS (NO \`\`\`json) DENGAN STRU
 
     setSubmittingOrder(true)
     try {
+      // Bukti transfer wajib sudah tersimpan di server sebelum order dicatat.
+      // Kalau upload otomatis belum selesai/gagal, coba simpan sekali lagi di sini.
+      const storedReceiptUrl = receiptUrl || (await persistReceiptToServer(receiptImage))
+
       if (extendOrder) {
         // Mode Perpanjangan: Akumulasi masa aktif dan perbarui order di Supabase
         const { endDate, logoutTime, fullDisplay } = calculateExtensionExpiry(
@@ -592,6 +635,13 @@ KEMBALIKAN HANYA JSON MURNI TANPA MARKDOWN BACKTICKS (NO \`\`\`json) DENGAN STRU
         const newPrice = (extendOrder.price || 0) + packagePrice
         const extensionLog = `[Perpanjangan +${PACKAGES[selectedPackage].label} (${formatRupiah(packagePrice)}) pada ${new Date().toLocaleString('id-ID')} | Ref: ${verificationResult?.reference_id || '-'}]`
 
+        // Ambil daftar bukti lama supaya riwayat transfer tidak hilang saat diperpanjang.
+        const { data: existingRow } = await supabase
+          .from('orders')
+          .select('receipt_url, receipt_urls')
+          .eq('id', extendOrder.orderId)
+          .single()
+
         const { error } = await supabase
           .from('orders')
           .update({
@@ -599,6 +649,10 @@ KEMBALIKAN HANYA JSON MURNI TANPA MARKDOWN BACKTICKS (NO \`\`\`json) DENGAN STRU
             logout_time: logoutTime,
             price: newPrice,
             status: 'booked',
+            receipt_url: storedReceiptUrl || existingRow?.receipt_url || null,
+            receipt_urls: storedReceiptUrl
+              ? appendReceiptUrl(existingRow?.receipt_urls, storedReceiptUrl)
+              : (existingRow?.receipt_urls ?? []),
             notes: `${customerName.trim()} | ${notes.trim() ? `${notes.trim()} | ` : ''}${extensionLog}`,
           })
           .eq('id', extendOrder.orderId)
@@ -659,6 +713,9 @@ KEMBALIKAN HANYA JSON MURNI TANPA MARKDOWN BACKTICKS (NO \`\`\`json) DENGAN STRU
         logout_time: logoutTime,
         status: 'booked' as const,
         is_settled: true,
+        // Bukti transfer disimpan permanen di server (URL Cloudinary), bukan base64.
+        receipt_url: storedReceiptUrl || null,
+        receipt_urls: storedReceiptUrl ? [storedReceiptUrl] : [],
         notes: `Order Checkout Portal (QRIS). Pemesan: ${customerName.trim()} | AI Verified: ${verificationResult?.approved ? 'YA (LUNAS)' : 'MANUAL'} | Ref: ${verificationResult?.reference_id || '-'} | Ket: ${notes.trim() || '-'}`,
       }
 
@@ -1691,6 +1748,24 @@ Waktu Cetak: ${new Date().toLocaleString('id-ID')}
                       />
                     </div>
 
+                    {/* Status penyimpanan bukti transfer ke server */}
+                    {receiptUploading && (
+                      <p className="flex items-center justify-center gap-2 text-xs font-semibold text-muted-foreground">
+                        <span className="size-3.5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                        Menyimpan foto bukti transfer ke server...
+                      </p>
+                    )}
+                    {!receiptUploading && receiptUrl && (
+                      <p className="text-center text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                        ✓ Bukti transfer tersimpan di server
+                      </p>
+                    )}
+                    {!receiptUploading && receiptUploadError && (
+                      <p className="text-center text-xs font-semibold text-amber-600 dark:text-amber-400">
+                        ⚠️ {receiptUploadError}. Coba unggah ulang foto bukti transfer.
+                      </p>
+                    )}
+
                     {/* Verifying Loader */}
                     {verifying && (
                       <div className="rounded-2xl border border-primary/40 bg-primary/5 p-4 sm:p-5 text-center space-y-3 animate-in fade-in duration-200">
@@ -1970,6 +2045,7 @@ Waktu Cetak: ${new Date().toLocaleString('id-ID')}
                     const isCanProceed =
                       !submittingOrder &&
                       !verifying &&
+                      !receiptUploading &&
                       Boolean(receiptImage) &&
                       isApproved &&
                       Boolean(customerName.trim())
@@ -1992,10 +2068,10 @@ Waktu Cetak: ${new Date().toLocaleString('id-ID')}
                               <RefreshCw className="size-4 animate-spin" />
                               <span>{extendOrder ? 'Menyimpan Perpanjangan...' : 'Memproses Pesanan...'}</span>
                             </>
-                          ) : verifying ? (
+                          ) : verifying || receiptUploading ? (
                             <>
                               <RefreshCw className="size-4 animate-spin" />
-                              <span>{extendOrder ? 'Konfirmasi Perpanjangan' : 'Lanjut'}</span>
+                              <span>{verifying ? 'Verifikasi Bukti Transfer...' : 'Menyimpan Bukti...'}</span>
                             </>
                           ) : (
                             <>
@@ -2011,6 +2087,19 @@ Waktu Cetak: ${new Date().toLocaleString('id-ID')}
                               <RefreshCw className="size-3 animate-spin" />
                               <span>Sedang memverifikasi bukti transfer... Tombol dinonaktifkan sementara.</span>
                             </p>
+                          )}
+
+                          {!verifying && receiptUploading && (
+                            <p className="text-[11px] text-muted-foreground font-medium flex items-center justify-center gap-1.5">
+                              <RefreshCw className="size-3 animate-spin" />
+                              <span>Menyimpan foto bukti transfer ke server...</span>
+                            </p>
+                          )}
+
+                          {!verifying && !receiptUploading && receiptImage && verificationResult?.approved && receiptUploadError && (
+                            <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-2 text-center text-[11px] text-amber-600 dark:text-amber-400 font-medium">
+                              ⚠️ Bukti transfer belum tersimpan di server ({receiptUploadError}). Unggah ulang fotonya supaya admin bisa melihatnya.
+                            </div>
                           )}
 
                           {!verifying && receiptImage && verificationResult && !verificationResult.approved && (

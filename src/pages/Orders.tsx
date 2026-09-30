@@ -19,6 +19,7 @@ import ProfilePinStatus from '@/components/ProfilePinStatus'
 import EditProfileDialog from '@/components/EditProfileDialog'
 import SwitchProfileDialog from '@/components/SwitchProfileDialog'
 import HistoryDialog from '@/components/HistoryDialog'
+import ReceiptDialog from '@/components/ReceiptDialog'
 import { Search, CheckCircle2, AlertTriangle, List, LayoutGrid, Calendar, Tag, RefreshCw, Pencil, Trash2, KeyRound, Clock, Copy } from 'lucide-react'
 
 async function copyText(text: string, label = 'Disalin') {
@@ -638,6 +639,7 @@ Terima kasih! 🥰🫶🏻`
         </Button>
       </div>
       <HistoryDialog order={order} />
+      <ReceiptDialog order={order} />
       <EditOrderDialog order={order} onSaved={onEdited} />
       {order.status === 'booked' && (
         <>
